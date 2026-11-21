@@ -17,6 +17,7 @@
  */
 import { transaction } from '../db';
 import { MAX_ATTEMPTS_PER_ITEM } from '../estimate';
+import { addJobEvent } from '../repo/job-events';
 import { renderPlaceholderSvg } from '../placeholders';
 import {
   countOpenItems,
@@ -54,6 +55,16 @@ export const runnerConcurrency = CONCURRENCY;
 const simulatedLatencyMs = (kind: ItemKind) =>
   (kind === 'image' ? 2000 + Math.random() * 2000 : 5000 + Math.random() * 4000) * speed();
 
+/** A variação N usa o avatar (N-1) mod total; sem avatares ("Pessoa original") usa o nome do trabalho. */
+function avatarNameFor(avatarsJson: string, variation: number, fallback: string): string {
+  try {
+    const avatars = JSON.parse(avatarsJson) as Array<{ name: string }>;
+    return avatars.length ? avatars[(variation - 1) % avatars.length].name : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Conclui os itens "em andamento" cujo tempo simulado já passou. */
 function resolveDueItems(now: number): void {
   for (const item of listDueRunningItems(now)) {
@@ -66,7 +77,7 @@ function resolveDueItems(now: number): void {
             kind: item.kind,
             variation: item.variation,
             format: item.format,
-            avatarName: item.avatar_name,
+            avatarName: avatarNameFor(item.avatars_json, item.variation, item.avatar_name),
             model: item.model,
             resolution: item.resolution,
           }),
@@ -96,7 +107,10 @@ function activateJob(): ActiveJobRow | null {
   const running = findRunningJob();
   if (running) return running;
   const queued = findOldestQueuedJob();
-  if (queued) markJobRunning(queued.id);
+  if (queued) {
+    markJobRunning(queued.id);
+    addJobEvent(queued.id, 'Geração iniciada');
+  }
   return queued;
 }
 
@@ -134,6 +148,11 @@ function finalizeIfIdle(jobId: string): void {
   const c = getOutcomeCounts(jobId);
   const status = c.itemsDone === c.itemsTotal ? 'completed' : c.videosDone === 0 ? 'failed' : 'partial';
   finishJob(jobId, status, status === 'failed' ? 'Nenhum vídeo pôde ser gerado' : null);
+  addJobEvent(
+    jobId,
+    status === 'completed' ? 'Geração concluída' : status === 'partial' ? 'Geração finalizada parcialmente' : 'Geração falhou',
+    status === 'failed' ? 'failed' : 'done',
+  );
 }
 
 /** Um ciclo do executor. Chamado pelo loop (worker.ts) e por POST /api/worker. */

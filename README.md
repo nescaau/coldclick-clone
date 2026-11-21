@@ -35,9 +35,9 @@ Variáveis (todas opcionais, ver `.env.example`): `COLDCLICK_DATA_DIR`, `COLDCLI
 
 | Rota | Tela (rótulos idênticos à plataforma de referência) |
 | --- | --- |
-| `/trabalhos` | **Trabalhos**: lista única com status, fase, "N de M vídeos concluídos · F falhas", barra de progresso, busca, filtros e "Abrir geração". Estado de carregamento com skeletons. |
-| `/trabalhos/[id]` | Detalhe do trabalho: progresso, galeria, configuração; cancelar / reexecutar falhas / excluir. |
-| `/novo-trabalho` | **Novo trabalho** (4 etapas: Vídeo · Roteiro · Personalização · Revisão), cartão "Conexão do Google Flow", "Armazenamento da conta", painel **Resumo do trabalho** (nome, modelo, resolução) e modal "Confirmar gerações reais no Flow". |
+| `/trabalhos` | **Trabalhos**: lista única com **geração** e **transcrição ("prévia")**, status, fase, progresso, busca, filtros e "Abrir geração". Skeletons no carregamento. Tema claro e escuro. |
+| `/trabalhos/[id]` | **Detalhes do trabalho**: "Execução e resultados" (etapa atual, progresso, tempo decorrido, resumo da produção), "Ver transcrição" (cenas com tempos), "Etapas registradas", excluir; gerações também têm galeria, configuração, cancelar e reexecutar falhas. |
+| `/novo-trabalho` | **Novo trabalho** em 4 etapas — **Vídeo** · **Roteiro e produto** (produto, "Transcrever e dividir em cenas" com diálogo de confirmação, cenas editáveis de até 8 s, idioma do vídeo) · **Personalização** (um ou mais avatares, modo do roteiro, formato criativo, eixos de variação Roupa/Cenário/Objeto, modelo de imagem, CTA) · **Revisão** ("Preparar geração" → modal "Confirmar gerações reais no Flow"). Painel "Resumo do trabalho" sempre visível (modelo e resolução). |
 | `/avatares` | **Biblioteca de avatares** (busca, abas, paginação, adicionar/editar/remover com fotos). |
 | `/contas-flow` | **Contas Flow**: duas conexões, Conector do Chrome (instalar, parear, navegadores pareados), contas do Google Flow com prioridade, saldo, "Usar na rotação" e regras de rotação (+ simulador). |
 | `/chaves-gemini` | **Chaves Gemini**: cadastro em lote (1 por linha, até 10) e "Ordem de tentativa". |
@@ -70,6 +70,7 @@ rota (src/app/api/**)  →  serviço (src/lib/services/**)  →  repositório (s
 
 `src/lib/migrations.ts` — lista de migrações aplicadas uma vez, em ordem (`PRAGMA user_version`); para evoluir, **acrescente** um item.
 - **v1**: schema inicial.
+- **v3**: voz dos avatares, catálogo de produtos, tipo de trabalho (geração/transcrição), formato criativo, modo do roteiro, modelo de imagem, CTA, snapshots JSON (avatares, eixos, cenas) e `job_events`.
 - **v2**: prioridade em contas/chaves; segredos de chaves Gemini criptografados; remoção de colunas derivadas
   (`jobs.planned_*`) e inativas (`gemini_keys.enabled/cooldown_until`); `extension_browsers` + `pairing_codes` (vários navegadores).
 - Dados legados em texto puro (chaves Gemini/Whisper) são criptografados no bootstrap.
@@ -79,6 +80,15 @@ rota (src/app/api/**)  →  serviço (src/lib/services/**)  →  repositório (s
 Chaves de API são guardadas **criptografadas (AES-256-GCM)**. A chave mestra vem de `COLDCLICK_SECRET_KEY` ou de
 `data/.secret.key` (gerada na 1ª execução). Protege contra vazamento do `.db` isolado — em produção, use um KMS.
 O navegador só recebe máscaras (`••••nzeQ`). Tokens da extensão: só o hash SHA-256 é guardado.
+
+### Transcrição, cenas e "saídas"
+
+- `POST /api/transcriptions` cria um **trabalho de transcrição** (`jobs.kind = 'transcription'`), chama o endpoint Whisper com
+  tempos por palavra e divide a fala em **cenas** (`lib/scenes.ts`, puro e testado): frases inteiras agrupadas com no máximo
+  **7 s de fala** por cena (clipe de até 8 s, reservando o fim para o corte). Cada etapa vira um evento ("Etapas registradas").
+- **Saídas = avatares escolhidos** (1 se "Pessoa original"); a variação N usa o avatar N mod total. `POST /api/jobs/estimate`
+  ("Preparar geração") valida o pedido e devolve saídas, estimativa e contas elegíveis sem gravar nada.
+- O executor da fila só processa trabalhos de **geração**.
 
 ### Worker e ciclo de vida de um trabalho
 

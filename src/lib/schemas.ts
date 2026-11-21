@@ -1,30 +1,56 @@
 /** Esquemas zod das entradas da API — a única fonte de verdade da validação de formato. */
 import { z } from 'zod';
 import {
-  formatIds,
+  creativeFormatIds,
+  imageModelIds,
   isResolutionAllowed,
-  languageIds,
+  MAX_COPY_CHARS,
   MAX_VARIATIONS,
-  MIN_VARIATIONS,
   modelIds,
+  outputLanguageIds,
   resolutionIds,
+  scriptModeIds,
 } from './catalog';
 import { MAX_GEMINI_KEYS } from './config';
 
+const axisChoiceSchema = z.object({
+  mode: z.enum(['original', 'preset', 'describe']),
+  value: z.string().trim().max(300).default(''),
+});
+
+const sceneSchema = z.object({
+  index: z.number().int().min(1),
+  start: z.number().min(0),
+  end: z.number().min(0),
+  text: z.string().trim().min(1, 'Uma cena está vazia').max(MAX_COPY_CHARS),
+});
+
+/**
+ * Entrada de "Preparar geração"/"Disparar". As SAÍDAS (variações) não vêm do cliente: são o nº de
+ * avatares escolhidos (ou 1 para "Pessoa original"), calculado no serviço.
+ */
 export const createJobSchema = z
   .object({
     title: z.string().trim().max(120).optional(),
     videoId: z.string().min(1, 'Selecione um vídeo'),
-    /** null = "Pessoa original": mantém a pessoa do vídeo, sem trocar por um avatar. */
-    avatarId: z.string().min(1).nullable(),
-    /** Fala transcrita do vídeo (Whisper), guardada como referência. */
-    transcript: z.string().max(50_000).default(''),
+    /** Vazio = "Pessoa original": mantém a pessoa do vídeo, sem trocar por avatar. */
+    avatarIds: z.array(z.string().min(1)).max(MAX_VARIATIONS).default([]),
+    product: z.string().trim().max(120).nullable().default(null),
+    creativeFormat: z.enum(creativeFormatIds).default('original-recipe'),
+    scriptMode: z.enum(scriptModeIds).default('keep'),
+    outputLanguage: z.enum(outputLanguageIds).default('original'),
+    axes: z
+      .object({ outfit: axisChoiceSchema, scenery: axisChoiceSchema, object: axisChoiceSchema })
+      .default({ outfit: { mode: 'original', value: '' }, scenery: { mode: 'original', value: '' }, object: { mode: 'original', value: '' } }),
+    imageModel: z.enum(imageModelIds).default('nano-banana-2.1'),
+    /** Texto da chamada para ação; vazio = sem CTA. */
+    cta: z.string().trim().max(200).default(''),
+    /** Fala transcrita do vídeo (referência) e a origem dela. */
+    transcript: z.string().max(MAX_COPY_CHARS).default(''),
     transcriptSource: z.enum(['whisper', 'manual', 'none']).default('none'),
-    /** Copy final usada na geração (a transcrição, editada, ou escrita à mão). */
-    copyText: z.string().trim().min(1, 'Informe a copy do vídeo').max(20_000),
-    language: z.enum(languageIds).default('pt'),
-    format: z.enum(formatIds),
-    variations: z.number().int().min(MIN_VARIATIONS).max(MAX_VARIATIONS),
+    scenes: z.array(sceneSchema).max(100).default([]),
+    /** Copy final (todas as cenas juntas, ou o texto escrito à mão). */
+    copyText: z.string().trim().min(1, 'Informe a copy do vídeo').max(MAX_COPY_CHARS, `A copy pode ter no máximo ${MAX_COPY_CHARS} caracteres`),
     model: z.enum(modelIds),
     resolution: z.enum(resolutionIds),
   })
@@ -32,10 +58,18 @@ export const createJobSchema = z
     if (!isResolutionAllowed(v.model, v.resolution)) {
       ctx.addIssue({ code: 'custom', path: ['resolution'], message: '360p só está disponível com Omni 1.1 Flash.' });
     }
+    for (const [axis, choice] of Object.entries(v.axes)) {
+      if (choice.mode !== 'original' && !choice.value.trim()) {
+        ctx.addIssue({ code: 'custom', path: ['axes', axis], message: 'Escolha um preset ou descreva a variação.' });
+      }
+    }
+    if (new Set(v.avatarIds).size !== v.avatarIds.length) {
+      ctx.addIssue({ code: 'custom', path: ['avatarIds'], message: 'Avatares repetidos.' });
+    }
   });
 export type CreateJobInput = z.infer<typeof createJobSchema>;
 
-export const transcribeSchema = z.object({ language: z.enum(languageIds).default('pt') });
+export const transcribeSchema = z.object({ videoId: z.string().min(1, 'Selecione um vídeo') });
 export const importVideoSchema = z.object({ url: z.string().trim().url('Informe uma URL válida') });
 
 export const settingsSchema = z.object({

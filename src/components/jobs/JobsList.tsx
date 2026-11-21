@@ -75,7 +75,7 @@ export function JobsList({ initialJobs }: { initialJobs: JobDTO[] }) {
     const match = JOB_FILTERS.find((f) => f.id === filter)!.match;
     const q = search.trim().toLowerCase();
     return jobs.filter(
-      (j) => match(j.status) && (!q || `${j.title} ${j.videoName ?? ''} ${j.avatarName}`.toLowerCase().includes(q)),
+      (j) => match(j.status) && (!q || `${j.title} ${j.videoName ?? ''} ${j.product ?? ''}`.toLowerCase().includes(q)),
     );
   }, [jobs, filter, search]);
 
@@ -110,7 +110,7 @@ export function JobsList({ initialJobs }: { initialJobs: JobDTO[] }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex h-6 items-center gap-2">
                       <p className="truncate text-base font-semibold">{job.title}</p>
-                      <JobStatusPill status={job.status} />
+                      <JobStatusPill job={job} />
                     </div>
                     <div className="mt-2.5 flex h-5 items-center justify-between gap-4 text-sm text-muted-foreground">
                       <span className="truncate">{phaseLabel(job)}</span>

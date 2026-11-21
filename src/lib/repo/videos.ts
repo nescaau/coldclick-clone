@@ -12,6 +12,7 @@ export interface VideoRow {
   source_url: string | null;
   transcript: string | null;
   transcript_language: string | null;
+  transcript_scenes: string | null; // JSON
   created_at: string;
 }
 
@@ -41,8 +42,10 @@ export function insertVideoRow(v: NewVideoRow): void {
     .run(v);
 }
 
-export function updateVideoTranscript(id: string, text: string, language: string): void {
-  getDb().prepare('UPDATE videos SET transcript = ?, transcript_language = ? WHERE id = ?').run(text, language, id);
+export function updateVideoTranscript(id: string, text: string, language: string, scenesJson: string): void {
+  getDb()
+    .prepare('UPDATE videos SET transcript = ?, transcript_language = ?, transcript_scenes = ? WHERE id = ?')
+    .run(text, language, scenesJson, id);
 }
 
 /** Quantos trabalhos usam este vídeo. */

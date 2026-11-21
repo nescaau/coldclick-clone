@@ -1,6 +1,10 @@
 /** DTOs compartilhados entre servidor (serviços/API) e cliente (componentes). */
-import type { FormatId, ModelId, ResolutionId } from './catalog';
+import type { AxesChoice, CreativeFormatId, FormatId, ImageModelId, ModelId, ResolutionId, ScriptModeId } from './catalog';
+import type { GenerationEstimate } from './estimate';
+import type { Scene } from './scenes';
 
+/** Tipo do trabalho: geração de vídeos ou transcrição ("prévia") da fala de um vídeo. */
+export type JobKind = 'generation' | 'transcription';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
 export type ItemStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 export type ItemKind = 'image' | 'video';
@@ -19,6 +23,8 @@ export interface VideoDTO {
   sourceUrl: string | null;
   transcript: string | null;
   transcriptLanguage: string | null;
+  /** Cenas da última transcrição (para reaproveitar em novos trabalhos). */
+  transcriptScenes: Scene[] | null;
   createdAt: string;
 }
 
@@ -33,6 +39,8 @@ export interface AvatarDTO {
   name: string;
   /** Descrição do personagem em inglês (idade, aparência, roupa, cenário). */
   description: string;
+  /** Descrição da voz do personagem, em inglês (exibida na escolha de avatares). */
+  voice: string;
   photos: AvatarPhotoDTO[];
   createdAt: string;
   updatedAt: string;
@@ -51,7 +59,9 @@ export interface JobItemDTO {
 
 export interface JobDTO {
   id: string;
+  kind: JobKind;
   title: string;
+  product: string | null;
   status: JobStatus;
   phase: JobPhase;
   videoId: string | null;
@@ -75,6 +85,9 @@ export interface JobDTO {
   failedAttempts: number;
   /** Itens (imagens + vídeos) que ainda não terminaram. */
   itemsOpen: number;
+  /** Etapas registradas concluídas / total esperado (transcrição: 5). */
+  stepsDone: number;
+  stepsTotal: number;
   error: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -83,8 +96,34 @@ export interface JobDTO {
   thumbnailUrl: string | null;
 }
 
+export interface JobAvatarDTO {
+  id: string;
+  name: string;
+  description: string;
+  voice: string;
+}
+
+export interface JobEventDTO {
+  id: string;
+  label: string;
+  status: 'done' | 'failed';
+  createdAt: string;
+}
+
 export interface JobDetailDTO extends JobDTO {
   avatarDescription: string;
+  creativeFormat: CreativeFormatId;
+  scriptMode: ScriptModeId;
+  imageModel: ImageModelId;
+  /** Texto da chamada para ação; vazio = sem CTA. */
+  cta: string;
+  /** Avatares usados (vazio = pessoa original). */
+  avatars: JobAvatarDTO[];
+  axes: AxesChoice;
+  scenes: Scene[];
+  events: JobEventDTO[];
+  /** Tempo decorrido (início → fim, ou até agora se ainda em andamento). */
+  elapsedSec: number;
   transcript: string;
   transcriptSource: TranscriptSource;
   copyText: string;
@@ -116,6 +155,14 @@ export interface GoogleAccountDTO {
   availability: AccountAvailability;
   /** Há um Chrome online com a aba do Flow logada nesta conta. */
   sessionActive: boolean;
+}
+
+/** Resposta de "Preparar geração": saídas, estimativa de gerações e contas elegíveis na rotação. */
+export interface JobPreviewDTO {
+  variations: number;
+  estimate: GenerationEstimate;
+  eligibleAccounts: number;
+  avatarNames: string[];
 }
 
 export interface AccountsOverviewDTO {

@@ -5,6 +5,7 @@ export interface AvatarRow {
   id: string;
   name: string;
   description: string;
+  voice: string;
   created_at: string;
   updated_at: string;
 }
@@ -35,14 +36,14 @@ export const listPhotoRows = (): AvatarPhotoRow[] =>
 export const countAvatars = (): number =>
   (getDb().prepare('SELECT COUNT(*) AS n FROM avatars').get() as { n: number }).n;
 
-export function insertAvatarRow(id: string, name: string, description: string): void {
-  getDb().prepare('INSERT INTO avatars (id, name, description) VALUES (?, ?, ?)').run(id, name, description);
+export function insertAvatarRow(id: string, name: string, description: string, voice: string): void {
+  getDb().prepare('INSERT INTO avatars (id, name, description, voice) VALUES (?, ?, ?, ?)').run(id, name, description, voice);
 }
 
-export function updateAvatarRow(id: string, name: string, description: string): void {
+export function updateAvatarRow(id: string, name: string, description: string, voice: string): void {
   getDb()
-    .prepare('UPDATE avatars SET name = ?, description = ?, updated_at = ? WHERE id = ?')
-    .run(name, description, nowIso(), id);
+    .prepare('UPDATE avatars SET name = ?, description = ?, voice = ?, updated_at = ? WHERE id = ?')
+    .run(name, description, voice, nowIso(), id);
 }
 
 /** Acrescenta fotos ao final da ordem do avatar. */

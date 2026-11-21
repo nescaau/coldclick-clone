@@ -2,9 +2,8 @@
 
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { labelOf, MODELS, OMNI_MODEL, RESOLUTIONS, isResolutionAllowed, type ModelId, type ResolutionId } from '@/lib/catalog';
-import type { AvatarDTO } from '@/lib/types';
 import { Button, cn } from '../ui';
-import type { WizardState } from './state';
+import { copyWords, outputsOf, type WizardState } from './state';
 
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
   return (
@@ -21,19 +20,23 @@ function Select({ label, value, onChange, children }: { label: string; value: st
 }
 
 /** Painel fixo "Resumo do trabalho": nome, resumo da seleção, modelo/resolução e acesso à revisão. */
-export function SummaryPanel({ state, avatar, defaultTitle, canReview, onChange, onReview }: {
+export function SummaryPanel({ state, avatarNames, defaultTitle, showAvatarBlock, canReview, onChange, onReview }: {
   state: WizardState;
-  avatar: AvatarDTO | null;
+  avatarNames: string[];
   defaultTitle: string;
+  /** Na etapa Personalização aparece o bloco "Avatares selecionados". */
+  showAvatarBlock: boolean;
   canReview: boolean;
   onChange: (patch: Partial<WizardState>) => void;
   onReview: () => void;
 }) {
+  const outputs = outputsOf(state);
+  const words = copyWords(state);
   const rows: Array<[string, string]> = [
     ['Vídeo de referência', state.video?.name ?? 'Ainda não selecionado'],
-    ['Copy', state.copyText.trim() ? 'Pronta' : 'Pendente'],
-    ['Avatares', avatar?.name ?? 'Pessoa original'],
-    ['Saídas', `${state.variations} ${state.variations === 1 ? 'variação' : 'variações'}`],
+    ['Copy', words > 0 ? `${words} ${words === 1 ? 'palavra' : 'palavras'}` : 'Pendente'],
+    ['Avatares', avatarNames.join(', ')],
+    ['Saídas', `${outputs} ${outputs === 1 ? 'variação' : 'variações'}`],
   ];
 
   const changeModel = (model: ModelId) => {
@@ -53,16 +56,19 @@ export function SummaryPanel({ state, avatar, defaultTitle, canReview, onChange,
         <label htmlFor="job-title" className="mb-2 block text-sm font-semibold">
           Nome do trabalho
         </label>
-        <input
-          id="job-title"
-          className="field min-h-9 bg-secondary"
-          maxLength={120}
-          placeholder={defaultTitle}
-          value={state.title}
-          onChange={(e) => onChange({ title: e.target.value })}
-        />
+        <input id="job-title" className="field min-h-9 bg-secondary" maxLength={120} placeholder={defaultTitle} value={state.title} onChange={(e) => onChange({ title: e.target.value })} />
         <p className="mt-2 text-xs leading-5 text-muted-foreground">Se deixar vazio, usaremos “{defaultTitle}”.</p>
       </div>
+
+      {showAvatarBlock && (
+        <div className="space-y-1">
+          <p className="text-sm font-semibold">
+            Avatares selecionados · <span className="tabular-nums">{outputs}</span>
+          </p>
+          <p className="text-sm text-muted-foreground">{avatarNames.join(', ')}</p>
+          <p className="text-xs leading-5 text-muted-foreground">Cada avatar gera o mesmo vídeo com uma identidade diferente.</p>
+        </div>
+      )}
 
       <dl className="space-y-3.5">
         {rows.map(([label, value]) => (

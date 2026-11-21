@@ -24,7 +24,7 @@ export { cn };
 
 /* ---------- Button ---------- */
 
-type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'link';
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive' | 'danger' | 'link';
 type ButtonSize = 'default' | 'sm' | 'icon';
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
@@ -33,6 +33,8 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   outline: 'border border-border bg-background text-foreground hover:bg-secondary/60',
   ghost: 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
   destructive: 'text-destructive hover:bg-destructive/10',
+  /** Ação destrutiva confirmada (botão vermelho cheio). */
+  danger: 'bg-destructive text-white hover:bg-destructive/90',
   link: 'text-link hover:underline',
 };
 const BUTTON_SIZES: Record<ButtonSize, string> = {
@@ -102,7 +104,7 @@ const TONES: Record<Tone, string> = {
   neutral: 'bg-secondary text-foreground',
   success: 'bg-success/[0.14] text-success',
   warning: 'bg-warning/[0.14] text-warning',
-  destructive: 'bg-destructive/60 text-white',
+  destructive: 'bg-destructive text-white dark:bg-destructive/60',
   primary: 'bg-primary/[0.14] text-link',
 };
 
@@ -180,6 +182,42 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
 
 /* ---------- Formulários ---------- */
 
+/** Grupo de opções exclusivas em botões (radiogroup): idioma do vídeo, modo dos eixos de variação… */
+export function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  compact,
+}: {
+  label: string;
+  value: T;
+  options: ReadonlyArray<{ id: T; label: string }>;
+  onChange: (v: T) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={value === o.id}
+          onClick={() => onChange(o.id)}
+          className={cn(
+            'rounded-xl text-sm font-semibold transition-colors',
+            compact ? 'min-h-9 px-3' : 'min-h-11 px-4',
+            value === o.id ? 'bg-primary text-primary-foreground shadow-primary' : 'bg-accent/35 text-foreground hover:bg-accent/60',
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
@@ -234,6 +272,62 @@ export function Modal({
           </button>
         </div>
         <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Diálogo de confirmação ---------- */
+
+/** Diálogo (role="alertdialog") de confirmação: "Voltar/Enviar…", "Manter avatar/Remover avatar". */
+export function ConfirmDialog({
+  open,
+  title,
+  children,
+  cancelLabel,
+  confirmLabel,
+  tone = 'primary',
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  cancelLabel: string;
+  confirmLabel: string;
+  tone?: 'primary' | 'danger';
+  loading?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !loading && onCancel();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, loading, onCancel]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onMouseDown={() => !loading && onCancel()}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="w-full max-w-[28rem] rounded-2xl border border-border bg-card p-6 shadow-2xl"
+      >
+        <h2 className="text-base font-semibold">{title}</h2>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-foreground/90">{children}</div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onCancel} disabled={loading}>
+            {cancelLabel}
+          </Button>
+          <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
+            {confirmLabel}
+          </Button>
+        </div>
       </div>
     </div>
   );

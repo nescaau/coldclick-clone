@@ -12,6 +12,7 @@ import { openAsBlob } from 'node:fs';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import type { TimedSegment, TimedWord } from './scenes';
 import { getWhisperConfig } from './services/settings-service';
 import { resolveStoragePath } from './storage';
 
@@ -29,13 +30,35 @@ function runFfmpeg(args: string[]): Promise<{ ok: boolean; missing: boolean; std
   });
 }
 
+export interface TranscriptionResult {
+  text: string;
+  language: string;
+  words: TimedWord[];
+  segments: TimedSegment[];
+}
+
+/** Etapas observáveis (viram as "Etapas registradas" do trabalho de transcrição). */
+export type TranscriptionStep = 'audio-prepared' | 'sent' | 'received';
+
+interface VerboseResponse {
+  text?: string;
+  language?: string;
+  words?: Array<{ word: string; start: number; end: number }>;
+  segments?: Array<{ text: string; start: number; end: number }>;
+}
+
+/**
+ * Envia o áudio (ou o vídeo pequeno) ao endpoint de transcrição e devolve texto + tempos.
+ * Pede `verbose_json` com timestamps por palavra e por segmento; se o serviço não aceitar esse
+ * formato (alguns servidores compatíveis só entendem `json`), repete em modo simples (sem tempos).
+ */
 export async function transcribeVideoFile(
   videoRelPath: string,
-  language: string,
-): Promise<{ text: string; language: string }> {
+  onStep?: (step: TranscriptionStep) => void,
+): Promise<TranscriptionResult> {
   const cfg = getWhisperConfig();
   if (!cfg.apiKey) {
-    throw new TranscriptionConfigError('Configure a chave da API de transcrição em Configurações, ou use o modo manual.');
+    throw new TranscriptionConfigError('Configure a chave da API de transcrição em Configurações do estúdio.');
   }
 
   const source = resolveStoragePath(videoRelPath);
@@ -55,33 +78,53 @@ export async function transcribeVideoFile(
       const { size } = await stat(source);
       if (size > API_MAX_BYTES) {
         throw new Error(
-          'Este vídeo é grande demais para enviar direto (limite de 25 MB). Instale o ffmpeg (no Mac: "brew install ffmpeg") para extrair o áudio automaticamente, ou use o modo manual.',
+          'Este vídeo é grande demais para enviar direto (limite de 25 MB). Instale o ffmpeg (no Mac: "brew install ffmpeg") para extrair o áudio automaticamente, ou escreva a copy manualmente.',
         );
       }
     } else {
       throw new Error(`Não foi possível extrair o áudio do vídeo (ffmpeg): ${ff.stderr.split('\n').slice(-3).join(' ').trim()}`);
     }
+    onStep?.('audio-prepared');
 
     const isAudio = uploadPath !== source;
-    const form = new FormData();
-    form.append('file', await openAsBlob(uploadPath, { type: isAudio ? 'audio/mpeg' : 'video/mp4' }), isAudio ? 'audio.mp3' : path.basename(source));
-    form.append('model', cfg.model);
-    form.append('response_format', 'json');
-    if (language && language !== 'auto') form.append('language', language);
+    const blob = await openAsBlob(uploadPath, { type: isAudio ? 'audio/mpeg' : 'video/mp4' });
+    const filename = isAudio ? 'audio.mp3' : path.basename(source);
 
-    const res = await fetch(`${cfg.baseUrl}/audio/transcriptions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${cfg.apiKey}` },
-      body: form,
-      signal: AbortSignal.timeout(10 * 60_000),
-    });
+    const request = async (verbose: boolean): Promise<Response> => {
+      const form = new FormData();
+      form.append('file', blob, filename);
+      form.append('model', cfg.model);
+      if (verbose) {
+        form.append('response_format', 'verbose_json');
+        form.append('timestamp_granularities[]', 'word');
+        form.append('timestamp_granularities[]', 'segment');
+      } else {
+        form.append('response_format', 'json');
+      }
+      return fetch(`${cfg.baseUrl}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cfg.apiKey}` },
+        body: form,
+        signal: AbortSignal.timeout(10 * 60_000),
+      });
+    };
+
+    onStep?.('sent');
+    let res = await request(true);
+    if (res.status === 400 || res.status === 422) res = await request(false);
 
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 300);
       throw new Error(`A API de transcrição respondeu ${res.status}: ${detail || res.statusText}`);
     }
-    const data = (await res.json()) as { text?: string; language?: string };
-    return { text: (data.text ?? '').trim(), language: data.language ?? language };
+    const data = (await res.json()) as VerboseResponse;
+    onStep?.('received');
+    return {
+      text: (data.text ?? '').trim(),
+      language: data.language ?? 'auto',
+      words: (data.words ?? []).map((w) => ({ word: w.word, start: w.start, end: w.end })),
+      segments: (data.segments ?? []).map((g) => ({ text: g.text, start: g.start, end: g.end })),
+    };
   } finally {
     if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
   }

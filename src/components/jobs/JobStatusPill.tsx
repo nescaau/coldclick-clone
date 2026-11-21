@@ -1,5 +1,5 @@
-import { JOB_STATUS_LABEL } from '@/lib/format';
-import type { JobStatus } from '@/lib/types';
+import { jobStatusLabel } from '@/lib/format';
+import type { JobDTO, JobStatus } from '@/lib/types';
 import { Pill } from '../ui';
 
 const TONE: Record<JobStatus, 'neutral' | 'primary' | 'success' | 'warning' | 'destructive'> = {
@@ -11,11 +11,11 @@ const TONE: Record<JobStatus, 'neutral' | 'primary' | 'success' | 'warning' | 'd
   cancelled: 'neutral',
 };
 
-/** Pílula de status do trabalho (cores da referência: âmbar parcial, vermelho falha, verde pronto). */
-export function JobStatusPill({ status }: { status: JobStatus }) {
+/** Pílula de status (cores da referência: âmbar parcial, vermelho falha, verde pronto). */
+export function JobStatusPill({ job }: { job: Pick<JobDTO, 'kind' | 'status'> }) {
   return (
-    <Pill tone={TONE[status]} size="md">
-      {JOB_STATUS_LABEL[status]}
+    <Pill tone={TONE[job.status]} size="md">
+      {jobStatusLabel(job)}
     </Pill>
   );
 }

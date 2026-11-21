@@ -1,30 +1,38 @@
 import { randomBytes } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { formatBinaryBytes, overallPercent, phaseLabel, progressLabel, progressPercent } from './format';
+import { formatBinaryBytes, jobStatusLabel, overallPercent, phaseLabel, progressLabel, progressPercent } from './format';
 import { createJobSchema } from './schemas';
 
 const valid = {
   videoId: 'v1',
-  avatarId: null,
   copyText: 'olá',
-  format: '9:16',
-  variations: 3,
   model: 'veo-3.1-lite',
   resolution: '720p',
 };
 
 describe('createJobSchema', () => {
-  it('aceita "Pessoa original" (avatarId nulo) e aplica padrões', () => {
+  it('aceita "Pessoa original" (sem avatares) e aplica os padrões da referência', () => {
     const r = createJobSchema.parse(valid);
-    expect(r.avatarId).toBeNull();
-    expect(r.language).toBe('pt');
-    expect(r.transcriptSource).toBe('none');
+    expect(r.avatarIds).toEqual([]);
+    expect(r.outputLanguage).toBe('original');
+    expect(r.scriptMode).toBe('keep');
+    expect(r.creativeFormat).toBe('original-recipe');
+    expect(r.imageModel).toBe('nano-banana-2.1');
+    expect(r.cta).toBe('');
+    expect(r.axes.outfit).toEqual({ mode: 'original', value: '' });
   });
 
-  it('exige copy e limita variações', () => {
+  it('exige copy, limita o tamanho e recusa avatares repetidos', () => {
     expect(() => createJobSchema.parse({ ...valid, copyText: '   ' })).toThrow(/copy/i);
-    expect(() => createJobSchema.parse({ ...valid, variations: 0 })).toThrow();
-    expect(() => createJobSchema.parse({ ...valid, variations: 51 })).toThrow();
+    expect(() => createJobSchema.parse({ ...valid, copyText: 'a'.repeat(12_001) })).toThrow(/12\.000|12000/);
+    expect(() => createJobSchema.parse({ ...valid, avatarIds: ['a', 'a'] })).toThrow(/repetidos/);
+  });
+
+  it('exige preset/descrição quando o eixo não é "original"', () => {
+    const axes = { outfit: { mode: 'preset', value: '' }, scenery: { mode: 'original', value: '' }, object: { mode: 'original', value: '' } };
+    expect(() => createJobSchema.parse({ ...valid, axes })).toThrow(/preset|descreva/i);
+    axes.outfit.value = 'Roupa esportiva';
+    expect(createJobSchema.parse({ ...valid, axes }).axes.outfit.value).toBe('Roupa esportiva');
   });
 
   it('recusa 360p fora do Omni 1.1 Flash e aceita nele', () => {
@@ -34,7 +42,7 @@ describe('createJobSchema', () => {
 });
 
 describe('formatação de progresso (textos da referência)', () => {
-  const base = { variations: 20, videosDone: 20, failedAttempts: 3, imagesDone: 20, imagesFailed: 0, videosFailed: 0 };
+  const base = { kind: 'generation' as const, stepsDone: 0, stepsTotal: 0, variations: 20, videosDone: 20, failedAttempts: 3, imagesDone: 20, imagesFailed: 0, videosFailed: 0 };
 
   it('formata "20 de 20 vídeos concluídos · 3 falhas"', () => {
     const job = { ...base, status: 'partial' as const, phase: 'done' as const };
@@ -48,6 +56,18 @@ describe('formatação de progresso (textos da referência)', () => {
     expect(progressLabel(job)).toBe('Cancelado');
     expect(phaseLabel(job)).toBe('Imagens');
     expect(overallPercent(job)).toBe(0);
+  });
+
+  it('trabalhos de transcrição usam o vocabulário da prévia', () => {
+    const t = { ...base, kind: 'transcription' as const, stepsTotal: 5, stepsDone: 5, variations: 0, phase: 'done' as const };
+    const done = { ...t, status: 'completed' as const };
+    expect(jobStatusLabel(done)).toBe('Prévia pronta');
+    expect(phaseLabel(done)).toBe('Prévia concluída');
+    expect(progressLabel(done)).toBe('Concluído · 100%');
+    const failed = { ...t, status: 'failed' as const, stepsDone: 2 };
+    expect(jobStatusLabel(failed)).toBe('Falhou');
+    expect(progressLabel(failed)).toBe('Falhou · 40%');
+    expect(progressPercent(failed)).toBe(40);
   });
 
   it('usa unidades binárias em pt-BR', () => {

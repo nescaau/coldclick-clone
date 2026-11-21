@@ -10,6 +10,7 @@ export const SEED_FLAG = 'seeded_avatars_v1';
 export interface SeedAvatar {
   name: string;
   description: string;
+  voice: string;
   skin: string;
   hair: string;
   top: string;
@@ -21,6 +22,8 @@ export const SEED_AVATARS: SeedAvatar[] = [
     name: 'Marina Costa',
     description:
       'Brazilian woman, 32 years old, warm tan skin, long wavy brown hair tied in a high ponytail, athletic build, friendly confident smile. Wearing a light grey sports top and black leggings. Standing in a bright modern home kitchen with white cabinets and soft natural window light.',
+    voice:
+      'Warm, energetic Brazilian-accented female voice, medium pitch, friendly and motivating, like a fitness coach sharing a tip with a close friend.',
     skin: '#d9a47a',
     hair: '#5a3825',
     top: '#b9bcc4',
@@ -30,6 +33,8 @@ export const SEED_AVATARS: SeedAvatar[] = [
     name: 'Carlos Mendes',
     description:
       'Latino man, 41 years old, short dark hair with light stubble, approachable smile, medium-brown skin. Wearing a navy blazer over a plain white t-shirt. Seated at a tidy home-office desk with a laptop, a plant and a warm desk lamp, shallow depth of field.',
+    voice:
+      'Confident, calm male voice with a light Latin accent, medium-low pitch, clear and persuasive, speaks like an entrepreneur explaining a smart decision.',
     skin: '#c58c63',
     hair: '#24180f',
     top: '#1f3556',
@@ -39,6 +44,8 @@ export const SEED_AVATARS: SeedAvatar[] = [
     name: 'Dona Lúcia',
     description:
       'Brazilian woman, 64 years old, short silver hair, gentle wrinkles, round glasses, kind and trustworthy expression, light skin. Wearing a floral cardigan over a cream blouse. Sitting on a cozy living-room sofa with houseplants and soft late-afternoon light coming through the curtains.',
+    voice:
+      'Soft, gentle grandmotherly voice, slow and warm, slightly raspy, speaks like giving loving advice to her family.',
     skin: '#e8c3a3',
     hair: '#cfd2d8',
     top: '#b86a7a',

@@ -16,6 +16,8 @@ export interface DueItemRow {
   model: string;
   resolution: string;
   avatar_name: string;
+  /** Snapshot dos avatares do trabalho (JSON); a variação N usa o avatar (N-1) mod total. */
+  avatars_json: string;
   generations_used: number;
   max_generations: number;
 }
@@ -37,7 +39,7 @@ export const listDueRunningItems = (now: number): DueItemRow[] =>
   getDb()
     .prepare(
       `SELECT i.id, i.job_id, i.kind, i.variation, i.attempts,
-              j.format, j.model, j.resolution, j.avatar_name, j.generations_used, j.max_generations
+              j.format, j.model, j.resolution, j.avatar_name, j.avatars_json, j.generations_used, j.max_generations
        FROM job_items i JOIN jobs j ON j.id = i.job_id
        WHERE i.status = 'running' AND i.ready_at <= ?`,
     )
@@ -69,12 +71,12 @@ export const incrementFailedAttempts = (jobId: string): void => {
 
 export const findRunningJob = (): ActiveJobRow | null =>
   (getDb()
-    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE status = 'running' ORDER BY created_at LIMIT 1`)
+    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'running' ORDER BY created_at LIMIT 1`)
     .get() as ActiveJobRow | undefined) ?? null;
 
 export const findOldestQueuedJob = (): ActiveJobRow | null =>
   (getDb()
-    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1`)
+    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'queued' ORDER BY created_at LIMIT 1`)
     .get() as ActiveJobRow | undefined) ?? null;
 
 export const markJobRunning = (jobId: string): void => {

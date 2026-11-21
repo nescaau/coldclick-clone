@@ -11,11 +11,10 @@ import {
   findVideoRow,
   insertVideoRow,
   listVideoRows,
-  updateVideoTranscript,
   type VideoRow,
 } from '../repo/videos';
 import { deleteFile, getStorageUsage, PayloadTooLargeError, safeBaseName, saveWebStream } from '../storage';
-import { transcribeVideoFile, TranscriptionConfigError } from '../transcribe';
+import type { Scene } from '../scenes';
 import type { VideoDTO } from '../types';
 
 const toDTO = (r: VideoRow): VideoDTO => ({
@@ -29,6 +28,7 @@ const toDTO = (r: VideoRow): VideoDTO => ({
   sourceUrl: r.source_url,
   transcript: r.transcript,
   transcriptLanguage: r.transcript_language,
+  transcriptScenes: r.transcript_scenes ? (JSON.parse(r.transcript_scenes) as Scene[]) : null,
   createdAt: r.created_at,
 });
 
@@ -159,22 +159,6 @@ export async function importVideoFromUrl(rawUrl: string): Promise<VideoDTO> {
     source: 'url',
     sourceUrl: origin,
   });
-}
-
-/** Transcreve a fala do vídeo e guarda o texto para reaproveitar em outros trabalhos. */
-export async function transcribeVideo(id: string, language: string): Promise<{ text: string; language: string }> {
-  const row = findVideoRow(id);
-  if (!row) throw new HttpError(404, 'Vídeo não encontrado');
-  try {
-    const result = await transcribeVideoFile(row.file_path, language);
-    if (!result.text) throw new HttpError(422, 'Nenhuma fala foi detectada neste vídeo.');
-    updateVideoTranscript(id, result.text, language);
-    return { text: result.text, language };
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    if (e instanceof TranscriptionConfigError) throw new HttpError(412, e.message);
-    throw new HttpError(502, e instanceof Error ? e.message : 'Falha na transcrição');
-  }
 }
 
 /** Exclui o vídeo (e o arquivo) — recusado enquanto algum trabalho o usar. */

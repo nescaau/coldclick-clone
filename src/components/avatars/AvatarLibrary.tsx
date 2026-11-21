@@ -1,13 +1,14 @@
 'use client';
 
-import { ChevronDown, ImagePlus, Plus, Search, SlidersHorizontal, Trash2, User, Video, X } from 'lucide-react';
+import { ChevronDown, Plus, Search, SlidersHorizontal, Trash2, User, Video } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PageLayout } from '../PageLayout';
 import { apiFetch, errorMessage } from '@/lib/client';
 import { ROUTES } from '@/lib/nav';
 import type { AvatarDTO } from '@/lib/types';
-import { Alert, Button, Card, cn, EmptyState, Field, LinkButton, Modal, Pill } from '../ui';
+import { Alert, Button, Card, cn, ConfirmDialog, EmptyState, LinkButton, Pill } from '../ui';
+import { AvatarFormModal } from './AvatarFormModal';
 
 const PAGE_SIZE = 6;
 /** Todos os avatares desta réplica são pessoais e disponíveis; "Globais" e "Inativos" existem só na plataforma original. */
@@ -24,6 +25,8 @@ export function AvatarLibrary({ avatars }: { avatars: AvatarDTO[] }) {
   /** `null` = fechado; `'new'` = criando; AvatarDTO = editando. */
   const [editing, setEditing] = useState<AvatarDTO | 'new' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<AvatarDTO | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
   const [tab, setTab] = useState<TabId>('all');
   const [query, setQuery] = useState('');
   const [applied, setApplied] = useState('');
@@ -39,13 +42,18 @@ export function AvatarLibrary({ avatars }: { avatars: AvatarDTO[] }) {
   const current = Math.min(page, pages - 1);
   const visible = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
 
-  const remove = async (a: AvatarDTO) => {
-    if (!confirm(`Remover o avatar "${a.name}" e suas fotos? Trabalhos já criados mantêm uma cópia dos dados.`)) return;
+  const confirmRemove = async () => {
+    if (!removing) return;
+    setRemoveBusy(true);
     try {
-      await apiFetch(`/api/avatars/${a.id}`, { method: 'DELETE' });
+      await apiFetch(`/api/avatars/${removing.id}`, { method: 'DELETE' });
+      setRemoving(null);
       router.refresh();
     } catch (e) {
       setError(errorMessage(e));
+      setRemoving(null);
+    } finally {
+      setRemoveBusy(false);
     }
   };
 
@@ -152,7 +160,7 @@ export function AvatarLibrary({ avatars }: { avatars: AvatarDTO[] }) {
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map((a) => (
-                <AvatarCard key={a.id} avatar={a} onEdit={() => setEditing(a)} onRemove={() => remove(a)} />
+                <AvatarCard key={a.id} avatar={a} onEdit={() => setEditing(a)} onRemove={() => setRemoving(a)} />
               ))}
             </div>
           )}
@@ -198,6 +206,19 @@ export function AvatarLibrary({ avatars }: { avatars: AvatarDTO[] }) {
           router.refresh();
         }}
       />
+
+      <ConfirmDialog
+        open={removing !== null}
+        title={`Remover “${removing?.name ?? ''}”?`}
+        cancelLabel="Manter avatar"
+        confirmLabel="Remover avatar"
+        tone="danger"
+        loading={removeBusy}
+        onCancel={() => setRemoving(null)}
+        onConfirm={confirmRemove}
+      >
+        <p>O avatar, as fotos e as associações de etiquetas serão removidos da biblioteca.</p>
+      </ConfirmDialog>
     </PageLayout>
   );
 }
@@ -231,109 +252,5 @@ function AvatarCard({ avatar, onEdit, onRemove }: { avatar: AvatarDTO; onEdit: (
         </Button>
       </div>
     </article>
-  );
-}
-
-function AvatarFormModal({ avatar, open, onClose, onSaved }: { avatar: AvatarDTO | null; open: boolean; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(avatar?.name ?? '');
-  const [description, setDescription] = useState(avatar?.description ?? '');
-  const [newFiles, setNewFiles] = useState<File[]>([]);
-  const [removed, setRemoved] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Pré-visualização das fotos novas (URLs de objeto precisam ser liberadas).
-  const previews = useMemo(() => newFiles.map((f) => URL.createObjectURL(f)), [newFiles]);
-  useEffect(() => () => previews.forEach(URL.revokeObjectURL), [previews]);
-
-  const keptPhotos = (avatar?.photos ?? []).filter((p) => !removed.includes(p.id));
-  const totalPhotos = keptPhotos.length + newFiles.length;
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const form = new FormData();
-      form.set('name', name);
-      form.set('description', description);
-      newFiles.forEach((f) => form.append('photos', f));
-      if (removed.length) form.set('removePhotoIds', JSON.stringify(removed));
-      await apiFetch(avatar ? `/api/avatars/${avatar.id}` : '/api/avatars', { method: avatar ? 'PUT' : 'POST', body: form });
-      onSaved();
-    } catch (e) {
-      setError(errorMessage(e));
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title={avatar ? 'Editar perfil e fotos' : 'Adicionar avatar'} size="lg">
-      <div className="space-y-5">
-        {error && <Alert>{error}</Alert>}
-        <Field label="Nome">
-          <input className="field" maxLength={80} placeholder="Ex.: Katie Brooks" value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label="Descrição do personagem (em inglês)" hint="Inclua idade, aparência, roupa e cenário. Esse texto vai direto para o prompt de geração.">
-          <textarea
-            className="field min-h-32 resize-y"
-            maxLength={2000}
-            placeholder="40-year-old American woman, light skin, long straight brown hair, natural makeup, standing in a bright home hallway…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </Field>
-
-        <div>
-          <p className="mb-1.5 text-sm font-semibold">Fotos de referência ({totalPhotos})</p>
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-            {keptPhotos.map((p) => (
-              <Thumb key={p.id} src={p.url} onRemove={() => setRemoved((r) => [...r, p.id])} />
-            ))}
-            {previews.map((src, i) => (
-              <Thumb key={src} src={src} isNew onRemove={() => setNewFiles((files) => files.filter((_, idx) => idx !== i))} />
-            ))}
-            <label className="grid aspect-[3/4] cursor-pointer place-items-center rounded-xl border-2 border-dashed border-border text-muted-foreground transition hover:border-primary hover:text-link">
-              <input
-                type="file"
-                multiple
-                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  setNewFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
-                  e.target.value = '';
-                }}
-              />
-              <span className="flex flex-col items-center gap-1 text-xs">
-                <ImagePlus className="size-5" />
-                Adicionar
-              </span>
-            </label>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">JPG, PNG ou WebP, até 10 MB cada. Dá para selecionar várias de uma vez.</p>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-border pt-4">
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={save} loading={saving} disabled={!name.trim() || !description.trim()}>
-            {avatar ? 'Salvar alterações' : 'Criar avatar'}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function Thumb({ src, onRemove, isNew }: { src: string; onRemove: () => void; isNew?: boolean }) {
-  return (
-    <div className="group relative aspect-[3/4] overflow-hidden rounded-xl border border-border bg-secondary">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt="" className="h-full w-full object-cover" />
-      {isNew && <span className="absolute bottom-1 left-1 rounded bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">NOVA</span>}
-      <button type="button" onClick={onRemove} className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-black/70 text-white opacity-0 transition group-hover:opacity-100" aria-label="Remover foto">
-        <X className="size-3.5" />
-      </button>
-    </div>
   );
 }

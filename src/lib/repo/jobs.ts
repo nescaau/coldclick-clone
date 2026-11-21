@@ -4,11 +4,13 @@
  */
 import type { FormatId, ModelId, ResolutionId } from '../catalog';
 import { getDb, nowIso } from '../db';
-import type { ItemKind, ItemStatus, JobStatus, TranscriptSource } from '../types';
+import type { ItemKind, ItemStatus, JobKind, JobStatus, TranscriptSource } from '../types';
 
 export interface JobRow {
   id: string;
+  kind: JobKind;
   title: string;
+  product: string | null;
   status: JobStatus;
   video_id: string | null;
   video_name: string | null;
@@ -26,6 +28,13 @@ export interface JobRow {
   max_generations: number;
   generations_used: number;
   failed_attempts: number;
+  creative_format: string;
+  script_mode: string;
+  image_model: string;
+  cta: string;
+  avatars_json: string; // JSON: snapshot dos avatares
+  axes_json: string; // JSON: eixos de variação
+  scenes_json: string; // JSON: cenas da fala
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -37,6 +46,8 @@ export interface JobRow {
   images_failed: number;
   items_open: number;
   images_open: number;
+  steps_done: number;
+  steps_failed: number;
   thumbnail_path: string | null;
 }
 
@@ -62,6 +73,8 @@ const JOB_SELECT = `
     ${COUNT(`i.kind = 'image' AND i.status = 'failed'`)}          AS images_failed,
     ${COUNT(`i.status IN ('pending','running')`)}                 AS items_open,
     ${COUNT(`i.kind = 'image' AND i.status IN ('pending','running')`)} AS images_open,
+    (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.status = 'done')   AS steps_done,
+    (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.status = 'failed') AS steps_failed,
     (SELECT i.file_path FROM job_items i WHERE i.job_id = j.id AND i.kind = 'image' AND i.status = 'done'
        ORDER BY i.variation LIMIT 1)                              AS thumbnail_path
   FROM jobs j
@@ -84,6 +97,7 @@ export const listItemRows = (jobId: string): JobItemRow[] =>
 export interface NewJobRow {
   id: string;
   title: string;
+  product: string | null;
   videoId: string;
   avatarId: string | null;
   avatarName: string;
@@ -97,16 +111,25 @@ export interface NewJobRow {
   model: ModelId;
   resolution: ResolutionId;
   maxGenerations: number;
+  creativeFormat: string;
+  scriptMode: string;
+  imageModel: string;
+  cta: string;
+  avatarsJson: string;
+  axesJson: string;
+  scenesJson: string;
 }
 
 /** Insere o trabalho e seus itens (1 imagem-base + 1 vídeo por variação). Chame dentro de uma transação. */
 export function insertJobWithItems(job: NewJobRow, newItemId: () => string): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO jobs (id, title, video_id, avatar_id, avatar_name, avatar_description, transcript, transcript_source,
-                       copy_text, language, format, variations, model, resolution, max_generations)
-     VALUES (@id, @title, @videoId, @avatarId, @avatarName, @avatarDescription, @transcript, @transcriptSource,
-             @copyText, @language, @format, @variations, @model, @resolution, @maxGenerations)`,
+    `INSERT INTO jobs (id, title, product, video_id, avatar_id, avatar_name, avatar_description, transcript, transcript_source,
+                       copy_text, language, format, variations, model, resolution, max_generations,
+                       creative_format, script_mode, image_model, cta, avatars_json, axes_json, scenes_json)
+     VALUES (@id, @title, @product, @videoId, @avatarId, @avatarName, @avatarDescription, @transcript, @transcriptSource,
+             @copyText, @language, @format, @variations, @model, @resolution, @maxGenerations,
+             @creativeFormat, @scriptMode, @imageModel, @cta, @avatarsJson, @axesJson, @scenesJson)`,
   ).run(job);
   const insertItem = db.prepare('INSERT INTO job_items (id, job_id, kind, variation) VALUES (?, ?, ?, ?)');
   for (let v = 1; v <= job.variations; v++) {
@@ -149,3 +172,35 @@ export function requeueJob(jobId: string, maxGenerations: number): void {
 }
 
 export const deleteJobRow = (id: string): boolean => getDb().prepare('DELETE FROM jobs WHERE id = ?').run(id).changes > 0;
+
+/* ------------------------------------------------------------------ */
+/* Trabalhos de transcrição ("prévia")                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Cria um trabalho de TRANSCRIÇÃO já em andamento. As colunas específicas de geração recebem valores
+ * neutros (variations = 0, sem itens): este tipo de trabalho não passa pelo executor da fila.
+ */
+export function insertTranscriptionJob(job: { id: string; title: string; videoId: string; language: string; defaultModel: string }): void {
+  getDb()
+    .prepare(
+      `INSERT INTO jobs (id, kind, title, status, video_id, avatar_name, avatar_description, language, format, variations,
+                         model, resolution, max_generations, started_at)
+       VALUES (@id, 'transcription', @title, 'running', @videoId, 'Pessoa original', '', @language, '9:16', 0,
+               @defaultModel, '720p', 0, @startedAt)`,
+    )
+    .run({ ...job, startedAt: nowIso() });
+}
+
+export function completeTranscriptionJob(id: string, transcript: string, scenesJson: string): void {
+  getDb()
+    .prepare(
+      `UPDATE jobs SET status = 'completed', transcript = ?, transcript_source = 'whisper', copy_text = ?, scenes_json = ?, finished_at = ?
+       WHERE id = ?`,
+    )
+    .run(transcript, transcript, scenesJson, nowIso(), id);
+}
+
+export function failTranscriptionJob(id: string, error: string): void {
+  getDb().prepare(`UPDATE jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`).run(error.slice(0, 500), nowIso(), id);
+}

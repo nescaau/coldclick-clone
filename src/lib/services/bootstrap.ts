@@ -6,6 +6,7 @@
  */
 import { seedAvatarsOnce } from './avatar-service';
 import { encryptLegacyGeminiKeys } from './gemini-key-service';
+import { seedProductsOnce } from './product-service';
 import { encryptLegacyWhisperKey } from './settings-service';
 
 declare global {
@@ -18,5 +19,6 @@ export function ensureBootstrapped(): void {
   encryptLegacyGeminiKeys();
   encryptLegacyWhisperKey();
   seedAvatarsOnce();
+  seedProductsOnce();
   globalThis.__coldclickBooted = true;
 }

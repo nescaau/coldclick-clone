@@ -88,6 +88,7 @@ const PAGE_TITLES: Record<string, string> = {
 export function pageTitleFor(pathname: string): string {
   const exact = PAGE_TITLES[pathname];
   if (exact) return exact;
+  if (pathname.startsWith(`${ROUTES.jobs}/`)) return 'Detalhes do trabalho';
   const base = Object.keys(PAGE_TITLES).find((r) => pathname.startsWith(`${r}/`));
   return base ? PAGE_TITLES[base] : 'ColdClick Affiliates';
 }

@@ -26,6 +26,7 @@ import type { AvatarDTO } from '../types';
 const MAX_PHOTOS_PER_REQUEST = 10;
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 2000;
+const MAX_VOICE = 600;
 
 function toDTOs(rows: AvatarRow[]): AvatarDTO[] {
   if (rows.length === 0) return [];
@@ -34,6 +35,7 @@ function toDTOs(rows: AvatarRow[]): AvatarDTO[] {
     id: r.id,
     name: r.name,
     description: r.description,
+    voice: r.voice,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     photos: photos
@@ -53,18 +55,22 @@ export function getAvatar(id: string): AvatarDTO {
 export interface AvatarInput {
   name: string;
   description: string;
+  /** Descrição da voz, em inglês (opcional). */
+  voice?: string;
 }
 
-function validateInput(input: AvatarInput): AvatarInput {
+function validateInput(input: AvatarInput): Required<AvatarInput> {
   const name = input.name.trim();
   const description = input.description.trim();
+  const voice = (input.voice ?? '').trim();
   if (!name) throw new AppError(400, 'Informe o nome do avatar');
   if (name.length > MAX_NAME) throw new AppError(400, `O nome deve ter no máximo ${MAX_NAME} caracteres`);
   if (!description) throw new AppError(400, 'Descreva o personagem (em inglês)');
   if (description.length > MAX_DESCRIPTION) {
     throw new AppError(400, `A descrição deve ter no máximo ${MAX_DESCRIPTION} caracteres`);
   }
-  return { name, description };
+  if (voice.length > MAX_VOICE) throw new AppError(400, `A descrição da voz deve ter no máximo ${MAX_VOICE} caracteres`);
+  return { name, description, voice };
 }
 
 function validatePhotos(files: File[]): void {
@@ -94,7 +100,7 @@ export async function createAvatar(input: AvatarInput & { photos: File[] }): Pro
   const id = randomUUID();
   const photos = await storePhotos(id, input.photos);
   transaction(() => {
-    insertAvatarRow(id, data.name, data.description);
+    insertAvatarRow(id, data.name, data.description, data.voice);
     insertPhotoRows(id, photos);
   });
   return getAvatar(id);
@@ -110,7 +116,7 @@ export async function updateAvatar(
   const newPhotos = await storePhotos(id, input.photos);
 
   const removedPaths = transaction(() => {
-    updateAvatarRow(id, data.name, data.description);
+    updateAvatarRow(id, data.name, data.description, data.voice);
     const removed = deletePhotoRows(id, input.removePhotoIds);
     insertPhotoRows(id, newPhotos);
     return removed;
@@ -144,7 +150,7 @@ export function seedAvatarsOnce(): void {
 
   transaction(() => {
     for (const { id, a, photos } of staged) {
-      insertAvatarRow(id, a.name, a.description);
+      insertAvatarRow(id, a.name, a.description, a.voice);
       insertPhotoRows(id, photos);
     }
     setRawSetting(SEED_FLAG, '1');

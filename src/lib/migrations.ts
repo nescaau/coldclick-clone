@@ -186,4 +186,41 @@ export const MIGRATIONS: string[] = [
     FROM extension_link WHERE token_hash IS NOT NULL;
   DROP TABLE extension_link;
   `,
+
+  /* v3 — Estúdio completo (etapas 2–4 do wizard, transcrição como trabalho, detalhe do trabalho)
+   *  - avatares ganham descrição de VOZ (exibida na escolha de avatares);
+   *  - catálogo de produtos (campo opcional do trabalho);
+   *  - trabalhos têm TIPO (geração | transcrição), produto, formato criativo, modo do roteiro,
+   *    modelo de imagem, CTA e snapshots em JSON de avatares, eixos de variação e cenas;
+   *  - eventos do trabalho ("Etapas registradas"). */
+  `
+  ALTER TABLE avatars ADD COLUMN voice TEXT NOT NULL DEFAULT '';
+
+  ALTER TABLE videos ADD COLUMN transcript_scenes TEXT;     -- JSON [{index,start,end,text}] da última transcrição
+
+  CREATE TABLE products (
+    id       TEXT PRIMARY KEY,
+    name     TEXT NOT NULL UNIQUE,
+    position INTEGER NOT NULL DEFAULT 0
+  );
+
+  ALTER TABLE jobs ADD COLUMN kind            TEXT NOT NULL DEFAULT 'generation' CHECK (kind IN ('generation','transcription'));
+  ALTER TABLE jobs ADD COLUMN product         TEXT;
+  ALTER TABLE jobs ADD COLUMN creative_format TEXT NOT NULL DEFAULT 'original-recipe';
+  ALTER TABLE jobs ADD COLUMN script_mode     TEXT NOT NULL DEFAULT 'keep';
+  ALTER TABLE jobs ADD COLUMN image_model     TEXT NOT NULL DEFAULT 'nano-banana-2.1';
+  ALTER TABLE jobs ADD COLUMN cta             TEXT NOT NULL DEFAULT '';     -- '' = sem CTA; senão, o texto
+  ALTER TABLE jobs ADD COLUMN avatars_json    TEXT NOT NULL DEFAULT '[]';   -- snapshot dos avatares usados (vazio = pessoa original)
+  ALTER TABLE jobs ADD COLUMN axes_json       TEXT NOT NULL DEFAULT '{}';   -- eixos de variação (roupa/cenário/objeto)
+  ALTER TABLE jobs ADD COLUMN scenes_json     TEXT NOT NULL DEFAULT '[]';   -- cenas da fala (≤ 8 s cada)
+
+  CREATE TABLE job_events (
+    id         TEXT PRIMARY KEY,
+    job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    label      TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'done' CHECK (status IN ('done','failed')),
+    created_at TEXT NOT NULL DEFAULT (${NOW})
+  );
+  CREATE INDEX idx_job_events_job ON job_events(job_id, created_at);
+  `,
 ];

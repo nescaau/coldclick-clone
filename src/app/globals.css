@@ -11,7 +11,8 @@
  *              --border #24324a     --destructive #f0555a --ring #2b6bff   --radius 12px
  * Extras medidos nas capturas: --link #93b4ff (eyebrows/links), --inset #0f1727 (painéis aninhados),
  *              --success #3ac77f, --warning #e3a93e.
- * Tema claro: NÃO existe nas capturas (a referência só mostra o escuro) — paleta estimada.
+ * Tema claro: medido em reference/shots/jobs-light.png (fundo #f6f8fc, cartão #fff, sidebar #fafbfe,
+ *              borda #e2e8f2, texto #0e1420, texto suave #5b6577, link #2455d6, sucesso #15774a, alerta #8a5a00).
  */
 :root,
 :root[data-theme='dark'] {
@@ -37,23 +38,23 @@
 }
 
 :root[data-theme='light'] {
-  --background: 245 247 251;
-  --foreground: 15 23 42;
+  --background: 246 248 252; /* #f6f8fc */
+  --foreground: 14 20 32; /* #0e1420 */
   --card: 255 255 255;
   --primary: 43 107 255;
   --primary-foreground: 255 255 255;
   --secondary: 238 242 248;
   --muted: 241 244 249;
-  --muted-foreground: 91 107 130;
-  --accent: 230 237 249;
-  --destructive: 217 58 64;
-  --border: 217 225 238;
+  --muted-foreground: 91 101 119; /* #5b6577 */
+  --accent: 232 237 247; /* #e8edf7 (botões em hover) */
+  --destructive: 199 56 61; /* #c7383d */
+  --border: 226 232 242; /* #e2e8f2 */
   --ring: 43 107 255;
-  --sidebar: 255 255 255;
-  --link: 29 78 216;
-  --inset: 244 247 252;
-  --success: 21 150 90;
-  --warning: 183 121 31;
+  --sidebar: 250 251 254; /* #fafbfe */
+  --link: 36 85 214; /* #2455d6 */
+  --inset: 243 246 251; /* #f3f6fb */
+  --success: 21 119 74; /* #15774a */
+  --warning: 138 90 0; /* #8a5a00 */
   color-scheme: light;
 }
 

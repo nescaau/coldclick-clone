@@ -37,7 +37,8 @@ export function formatDuration(sec: number | null): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export const JOB_STATUS_LABEL: Record<JobStatus, string> = {
+/** Rótulos de status. Trabalhos de transcrição ("prévia") têm vocabulário próprio na referência. */
+const GENERATION_STATUS_LABEL: Record<JobStatus, string> = {
   queued: 'Na fila',
   running: 'Em andamento',
   completed: 'Concluído',
@@ -45,12 +46,35 @@ export const JOB_STATUS_LABEL: Record<JobStatus, string> = {
   failed: 'Falhou',
   cancelled: 'Cancelado',
 };
+const TRANSCRIPTION_STATUS_LABEL: Record<JobStatus, string> = {
+  queued: 'Na fila',
+  running: 'Transcrevendo',
+  completed: 'Prévia pronta',
+  partial: 'Prévia pronta',
+  failed: 'Falhou',
+  cancelled: 'Cancelado',
+};
+
+type KindStatus = Pick<JobDTO, 'kind' | 'status'>;
+
+export const jobStatusLabel = (job: KindStatus): string =>
+  (job.kind === 'transcription' ? TRANSCRIPTION_STATUS_LABEL : GENERATION_STATUS_LABEL)[job.status];
 
 export const isActiveStatus = (s: JobStatus) => s === 'queued' || s === 'running';
 
 type Progress = Pick<
   JobDTO,
-  'status' | 'phase' | 'variations' | 'videosDone' | 'failedAttempts' | 'imagesDone' | 'imagesFailed' | 'videosFailed'
+  | 'kind'
+  | 'status'
+  | 'phase'
+  | 'variations'
+  | 'videosDone'
+  | 'failedAttempts'
+  | 'imagesDone'
+  | 'imagesFailed'
+  | 'videosFailed'
+  | 'stepsDone'
+  | 'stepsTotal'
 >;
 
 /** Ex.: "20 de 20 vídeos concluídos · 3 falhas". */
@@ -72,11 +96,16 @@ export function overallPercent(
   return Math.round((processed / total) * 100);
 }
 
+/** Percentual de etapas registradas de uma transcrição. */
+const stepsPercent = (job: Pick<JobDTO, 'stepsDone' | 'stepsTotal' | 'status'>): number =>
+  job.status === 'completed' ? 100 : job.stepsTotal ? Math.round((job.stepsDone / job.stepsTotal) * 100) : 0;
+
 /**
  * Rótulo da esquerda abaixo do título na lista de trabalhos:
  * a fase em andamento ("Imagens"/"Vídeos") ou o desfecho da geração.
  */
 export function phaseLabel(job: Progress): string {
+  if (job.kind === 'transcription') return job.status === 'running' || job.status === 'queued' ? 'Transcrevendo áudio' : 'Prévia concluída';
   switch (job.status) {
     case 'completed':
       return 'Geração de vídeos concluída';
@@ -92,17 +121,30 @@ export function phaseLabel(job: Progress): string {
 /** Texto da direita na lista de trabalhos. */
 export function progressLabel(job: Progress): string {
   if (job.status === 'cancelled') return 'Cancelado';
+  if (job.kind === 'transcription') {
+    const pct = stepsPercent(job);
+    return job.status === 'completed' ? 'Concluído · 100%' : job.status === 'failed' ? `Falhou · ${pct}%` : `Em andamento · ${pct}%`;
+  }
   if (job.status === 'failed') return `Falhou · ${overallPercent(job)}%`;
   return formatProgress(job);
 }
 
-/** Largura da barra: vídeos prontos nos trabalhos encerrados; itens finalizados nos demais. */
+/** Largura da barra: vídeos prontos nos trabalhos encerrados; itens/etapas processados nos demais. */
 export function progressPercent(job: Progress): number {
+  if (job.kind === 'transcription') return stepsPercent(job);
   if (job.status === 'completed' || job.status === 'partial') {
     return job.variations ? Math.round((job.videosDone / job.variations) * 100) : 0;
   }
   return overallPercent(job);
 }
+
+/** "0min 16s" — tempo decorrido. */
+export function formatElapsed(sec: number): string {
+  return `${Math.floor(sec / 60)}min ${sec % 60}s`;
+}
+
+/** Palavras de um texto (para "25 palavras" no resumo). */
+export const countWords = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
 
 export function maskSecret(value: string): string {
   if (!value) return '';

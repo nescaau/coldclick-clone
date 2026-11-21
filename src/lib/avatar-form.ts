@@ -4,6 +4,7 @@ import { AppError } from './errors';
 export interface AvatarForm {
   name: string;
   description: string;
+  voice: string;
   removePhotoIds: string[];
   photos: File[];
 }
@@ -30,6 +31,7 @@ export async function readAvatarForm(req: Request): Promise<AvatarForm> {
   return {
     name: String(form.get('name') ?? ''),
     description: String(form.get('description') ?? ''),
+    voice: String(form.get('voice') ?? ''),
     removePhotoIds,
     photos: form.getAll('photos').filter((f): f is File => typeof f !== 'string' && f.size > 0),
   };

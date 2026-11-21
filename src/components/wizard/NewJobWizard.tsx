@@ -1,42 +1,70 @@
 'use client';
 
-import { ArrowLeft, ChevronRight, Library, Rocket } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Library } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { PageLayout } from '../PageLayout';
+import { AvatarFormModal } from '../avatars/AvatarFormModal';
 import { apiFetch, errorMessage, jsonInit } from '@/lib/client';
 import { formatBinaryBytes } from '@/lib/format';
 import { ROUTES } from '@/lib/nav';
-import type { AvatarDTO, JobDetailDTO, StorageUsageDTO, VideoDTO } from '@/lib/types';
+import type { AvatarDTO, JobDetailDTO, JobPreviewDTO, StorageUsageDTO, VideoDTO } from '@/lib/types';
 import { Button, Card, cn, LinkButton, ProgressBar } from '../ui';
-import { INITIAL_STATE, STEPS, firstBlockedIndex, stepBlocker, type FlowGate, type WizardState } from './state';
+import { INITIAL_STATE, STEPS, ctaText, firstBlockedIndex, fullCopy, lockedHint, stepBlocker, type FlowGate, type WizardState } from './state';
 import { StepPersonalize } from './StepPersonalize';
 import { ConfirmModal, StepReview } from './StepReview';
 import { StepScript } from './StepScript';
 import { StepVideo } from './StepVideo';
 import { SummaryPanel } from './SummaryPanel';
-import { Check } from 'lucide-react';
 
 interface Props {
   initialVideos: VideoDTO[];
-  avatars: AvatarDTO[];
-  whisperConfigured: boolean;
+  initialAvatars: AvatarDTO[];
+  products: string[];
+  /** O serviço de transcrição (Whisper) tem chave configurada. */
+  transcriptionReady: boolean;
   storage: StorageUsageDTO;
   /** Chrome pareado e online. */
   flowConnected: boolean;
   /** A Revisão só libera com o Flow conectado (COLDCLICK_REQUIRE_FLOW=1). */
   requireFlowConnection: boolean;
-  eligibleAccounts: number;
 }
 
-export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storage, flowConnected, requireFlowConnection, eligibleAccounts }: Props) {
+const stripExtension = (name: string) => name.replace(/\.[^.]+$/, '');
+
+/** Corpo comum de POST /api/jobs/estimate e POST /api/jobs. */
+function buildPayload(s: WizardState) {
+  return {
+    title: s.title.trim() || undefined,
+    videoId: s.video!.id,
+    avatarIds: s.avatarIds,
+    product: s.product,
+    creativeFormat: s.creativeFormat,
+    scriptMode: s.scriptMode,
+    outputLanguage: s.outputLanguage,
+    axes: s.axes,
+    imageModel: s.imageModel,
+    cta: ctaText(s),
+    transcript: s.transcript,
+    transcriptSource: s.transcriptSource,
+    scenes: s.scenes,
+    copyText: fullCopy(s),
+    model: s.model,
+    resolution: s.resolution,
+  };
+}
+
+export function NewJobWizard({ initialVideos, initialAvatars, products, transcriptionReady, storage, flowConnected, requireFlowConnection }: Props) {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [state, setState] = useState<WizardState>(INITIAL_STATE);
   const [videos, setVideos] = useState(initialVideos);
+  const [avatars, setAvatars] = useState(initialAvatars);
   const [usedBytes, setUsedBytes] = useState(storage.usedBytes);
-  const [confirming, setConfirming] = useState(false);
+  const [newAvatarOpen, setNewAvatarOpen] = useState(false);
+  const [prepared, setPrepared] = useState<JobPreviewDTO | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,45 +72,57 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
   const step = STEPS[stepIndex];
   const blocker = stepBlocker(step.id, state, flow);
   const patch = (p: Partial<WizardState>) => setState((s) => ({ ...s, ...p }));
-  const avatar = avatars.find((a) => a.id === state.avatarId) ?? null;
-  const defaultTitle = state.video?.name ?? 'Novo vídeo';
-  const isLast = stepIndex === STEPS.length - 1;
+  const selectedAvatars = state.avatarIds.map((id) => avatars.find((a) => a.id === id)).filter((a): a is AvatarDTO => Boolean(a));
+  const avatarNames = selectedAvatars.length ? selectedAvatars.map((a) => a.name) : ['Pessoa original'];
+  const defaultTitle = state.video ? stripExtension(state.video.name) : 'Novo vídeo';
+  const reviewIndex = STEPS.length - 1;
+  const canEnter = (index: number) => index <= stepIndex || firstBlockedIndex(index, state, flow) === -1;
+  const canReview = firstBlockedIndex(reviewIndex, state, flow) === -1;
 
-  /** Ao escolher outro vídeo, a copy do anterior não vale mais; reaproveita a transcrição salva, se houver. */
+  /** Ao escolher outro vídeo, a copy do anterior não vale mais; reaproveita as cenas já transcritas, se houver. */
   const selectVideo = (video: VideoDTO | null) => {
     if (video?.id === state.video?.id) return;
-    patch({ video, transcript: video?.transcript ?? '', transcriptSource: video?.transcript ? 'whisper' : 'none', copyText: video?.transcript ?? '' });
+    const scenes = video?.transcriptScenes ?? [];
+    patch({
+      video,
+      scenes,
+      transcript: video?.transcript ?? '',
+      transcriptSource: video?.transcript ? 'whisper' : 'none',
+      copyText: '',
+    });
   };
 
-  /** Só entra em uma etapa se todas as anteriores estiverem válidas. */
-  const canEnter = (index: number) => index <= stepIndex || firstBlockedIndex(index, state, flow) === -1;
-  const reviewIndex = STEPS.length - 1;
-  const canReview = firstBlockedIndex(reviewIndex, state, flow) === -1;
+  const prepare = async () => {
+    setPreparing(true);
+    setError(null);
+    try {
+      setPrepared(await apiFetch<JobPreviewDTO>('/api/jobs/estimate', jsonInit('POST', buildPayload(state))));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setPreparing(false);
+    }
+  };
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      const job = await apiFetch<JobDetailDTO>(
-        '/api/jobs',
-        jsonInit('POST', {
-          title: state.title.trim() || undefined,
-          videoId: state.video!.id,
-          avatarId: state.avatarId,
-          transcript: state.transcript,
-          transcriptSource: state.transcriptSource,
-          copyText: state.copyText,
-          language: state.language,
-          format: state.format,
-          variations: state.variations,
-          model: state.model,
-          resolution: state.resolution,
-        }),
-      );
+      const job = await apiFetch<JobDetailDTO>('/api/jobs', jsonInit('POST', buildPayload(state)));
       router.push(`${ROUTES.jobs}/${job.id}`);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
+    }
+  };
+
+  const onAvatarCreated = async (saved: AvatarDTO) => {
+    setNewAvatarOpen(false);
+    try {
+      setAvatars(await apiFetch<AvatarDTO[]>('/api/avatars'));
+      setState((s) => ({ ...s, avatarIds: [...s.avatarIds, saved.id] }));
+    } catch {
+      /* a lista é recarregada na próxima visita; a seleção continua válida */
     }
   };
 
@@ -140,6 +180,7 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
               // Check quando a etapa já está válida (inclui a Personalização, válida por padrão: "Pessoa original").
               const done = !current && s.id !== 'review' && hint === null;
               const locked = !canEnter(i);
+              const lock = locked ? lockedHint(s.id, flow) : null;
               return (
                 <li key={s.id}>
                   <button
@@ -147,7 +188,7 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
                     disabled={locked}
                     onClick={() => setStepIndex(i)}
                     aria-current={current ? 'step' : undefined}
-                    aria-label={`${s.label} ${s.hint}${hint && !current ? ` · ${hint}` : ''}`}
+                    aria-label={`${s.label} ${s.hint}${lock ? ` · ${lock}` : ''}`}
                     className={cn(
                       'flex min-h-14 w-full min-w-0 items-center gap-2.5 rounded-xl px-3 text-left transition-colors disabled:cursor-not-allowed',
                       current ? 'bg-primary/[0.14] text-link' : 'bg-accent/30 text-muted-foreground enabled:hover:bg-accent/50',
@@ -175,7 +216,8 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
                 {step.id === 'script' && state.video && (
                   <StepScript
                     state={state}
-                    whisperConfigured={whisperConfigured}
+                    products={products}
+                    transcriptionReady={transcriptionReady}
                     onChange={patch}
                     onVideoUpdate={(v) => {
                       setVideos((list) => list.map((x) => (x.id === v.id ? v : x)));
@@ -183,27 +225,23 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
                     }}
                   />
                 )}
-                {step.id === 'personalize' && <StepPersonalize state={state} avatars={avatars} onChange={patch} />}
-                {step.id === 'review' && <StepReview state={state} avatar={avatar} />}
+                {step.id === 'personalize' && <StepPersonalize state={state} avatars={avatars} onChange={patch} onNewAvatar={() => setNewAvatarOpen(true)} />}
+                {step.id === 'review' && <StepReview state={state} avatarNames={avatarNames} preparing={preparing} error={prepared ? null : error} onPrepare={prepare} />}
               </div>
 
-              {/* Rodapé: Etapa N de 4 + Continuar */}
+              {/* Rodapé: Voltar · Etapa N de 4 · Continuar */}
               <div className="mt-6 flex items-center gap-3">
                 {stepIndex > 0 && (
-                  <Button variant="ghost" onClick={() => setStepIndex((i) => i - 1)} disabled={submitting}>
-                    <ArrowLeft /> Voltar
+                  <Button variant="outline" onClick={() => setStepIndex((i) => i - 1)} disabled={submitting || preparing}>
+                    <ChevronLeft /> Voltar
                   </Button>
                 )}
                 <p className="flex-1 text-center text-xs text-muted-foreground">
                   Etapa {stepIndex + 1} de {STEPS.length}
                 </p>
-                {isLast ? (
-                  <Button variant="primary" onClick={() => setConfirming(true)} disabled={Boolean(blocker)}>
-                    <Rocket /> Iniciar geração
-                  </Button>
-                ) : (
+                {stepIndex < reviewIndex && (
                   <Button variant="primary" onClick={() => setStepIndex((i) => i + 1)} disabled={Boolean(blocker)}>
-                    Continuar <ChevronRight />
+                    {step.id === 'personalize' ? 'Revisar trabalho' : 'Continuar'} <ChevronRight />
                   </Button>
                 )}
               </div>
@@ -214,24 +252,33 @@ export function NewJobWizard({ initialVideos, avatars, whisperConfigured, storag
               )}
             </div>
 
-            <SummaryPanel state={state} avatar={avatar} defaultTitle={defaultTitle} canReview={canReview} onChange={patch} onReview={() => setStepIndex(reviewIndex)} />
+            <SummaryPanel
+              state={state}
+              avatarNames={avatarNames}
+              defaultTitle={defaultTitle}
+              showAvatarBlock={step.id === 'personalize'}
+              canReview={canReview}
+              onChange={patch}
+              onReview={() => setStepIndex(reviewIndex)}
+            />
           </div>
         </form>
       </Card>
 
       <ConfirmModal
-        open={confirming}
+        open={prepared !== null}
         state={state}
-        avatar={avatar}
-        eligibleAccounts={eligibleAccounts}
+        prepared={prepared}
         submitting={submitting}
         error={error}
         onCancel={() => {
-          setConfirming(false);
+          setPrepared(null);
           setError(null);
         }}
         onConfirm={submit}
       />
+
+      <AvatarFormModal key={newAvatarOpen ? 'open' : 'closed'} avatar={null} open={newAvatarOpen} onClose={() => setNewAvatarOpen(false)} onSaved={onAvatarCreated} />
     </PageLayout>
   );
 }
