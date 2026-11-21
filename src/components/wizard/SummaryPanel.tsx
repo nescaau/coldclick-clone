@@ -70,14 +70,14 @@ export function SummaryPanel({ state, avatarNames, defaultTitle, showAvatarBlock
         </div>
       )}
 
-      <dl className="space-y-3.5">
+      <div className="space-y-3.5">
         {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="truncate text-sm font-semibold">{value}</dd>
-          </div>
+          <ul key={label}>
+            <li className="text-xs text-muted-foreground">{label}</li>
+            <li className="truncate text-sm font-semibold">{value}</li>
+          </ul>
         ))}
-      </dl>
+      </div>
 
       <div className="space-y-3 rounded-xl bg-background/60 p-3">
         <Select label="Modelo de vídeo" value={state.model} onChange={(v) => changeModel(v as ModelId)}>

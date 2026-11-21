@@ -11,7 +11,10 @@ export interface JobEventRow {
 }
 
 export function addJobEvent(jobId: string, label: string, status: 'done' | 'failed' = 'done'): void {
-  getDb().prepare('INSERT INTO job_events (id, job_id, label, status) VALUES (?, ?, ?, ?)').run(randomUUID(), jobId, label, status);
+  // INSERT … SELECT: se o trabalho foi excluído no meio-tempo, não grava nada (em vez de violar a FK).
+  getDb()
+    .prepare('INSERT INTO job_events (id, job_id, label, status) SELECT ?, id, ?, ? FROM jobs WHERE id = ?')
+    .run(randomUUID(), label, status, jobId);
 }
 
 export const listJobEventRows = (jobId: string): JobEventRow[] =>

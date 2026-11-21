@@ -6,6 +6,9 @@ export interface AvatarRow {
   name: string;
   description: string;
   voice: string;
+  scope: 'personal' | 'global';
+  gender: 'female' | 'male' | null;
+  age: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,8 +39,16 @@ export const listPhotoRows = (): AvatarPhotoRow[] =>
 export const countAvatars = (): number =>
   (getDb().prepare('SELECT COUNT(*) AS n FROM avatars').get() as { n: number }).n;
 
-export function insertAvatarRow(id: string, name: string, description: string, voice: string): void {
-  getDb().prepare('INSERT INTO avatars (id, name, description, voice) VALUES (?, ?, ?, ?)').run(id, name, description, voice);
+export interface AvatarProfile {
+  scope?: 'personal' | 'global';
+  gender?: 'female' | 'male' | null;
+  age?: number | null;
+}
+
+export function insertAvatarRow(id: string, name: string, description: string, voice: string, profile: AvatarProfile = {}): void {
+  getDb()
+    .prepare('INSERT INTO avatars (id, name, description, voice, scope, gender, age) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, description, voice, profile.scope ?? 'personal', profile.gender ?? null, profile.age ?? null);
 }
 
 export function updateAvatarRow(id: string, name: string, description: string, voice: string): void {

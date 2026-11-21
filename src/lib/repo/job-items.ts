@@ -4,6 +4,7 @@
  */
 import type { FormatId } from '../catalog';
 import { getDb, nowIso } from '../db';
+import { INTERRUPTED_ERROR } from './jobs';
 import type { ItemKind, JobStatus } from '../types';
 
 export interface DueItemRow {
@@ -71,12 +72,12 @@ export const incrementFailedAttempts = (jobId: string): void => {
 
 export const findRunningJob = (): ActiveJobRow | null =>
   (getDb()
-    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'running' ORDER BY created_at LIMIT 1`)
+    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'running' ORDER BY queued_at LIMIT 1`)
     .get() as ActiveJobRow | undefined) ?? null;
 
 export const findOldestQueuedJob = (): ActiveJobRow | null =>
   (getDb()
-    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'queued' ORDER BY created_at LIMIT 1`)
+    .prepare(`SELECT id, generations_used, max_generations FROM jobs WHERE kind = 'generation' AND status = 'queued' ORDER BY queued_at, created_at LIMIT 1`)
     .get() as ActiveJobRow | undefined) ?? null;
 
 export const markJobRunning = (jobId: string): void => {
@@ -111,9 +112,24 @@ export const getGenerationBudget = (jobId: string): { used: number; max: number 
 /** Inicia uma tentativa: item → em andamento (com prazo) e consome 1 geração do teto do trabalho. */
 export function startItemAttempt(itemId: string, jobId: string, readyAt: number): void {
   const db = getDb();
-  db.prepare(`UPDATE job_items SET status = 'running', attempts = attempts + 1, ready_at = ? WHERE id = ?`).run(readyAt, itemId);
-  db.prepare('UPDATE jobs SET generations_used = generations_used + 1 WHERE id = ?').run(jobId);
+  db.transaction(() => {
+    db.prepare(`UPDATE job_items SET status = 'running', attempts = attempts + 1, ready_at = ? WHERE id = ?`).run(readyAt, itemId);
+    db.prepare('UPDATE jobs SET generations_used = generations_used + 1 WHERE id = ?').run(jobId);
+  })();
 }
+
+/** Item parado por esgotar o teto de gerações: sai da fila sem contar como falha. */
+export function markItemInterrupted(itemId: string, fromStatus: 'running' | 'pending'): void {
+  getDb()
+    .prepare(`UPDATE job_items SET status = 'cancelled', error = ?, ready_at = NULL, finished_at = ? WHERE id = ? AND status = ?`)
+    .run(INTERRUPTED_ERROR, nowIso(), itemId, fromStatus);
+}
+
+/** Interrompe de uma vez todos os itens ainda pendentes do trabalho. Retorna quantos. */
+export const interruptPendingItems = (jobId: string): number =>
+  getDb()
+    .prepare(`UPDATE job_items SET status = 'cancelled', error = ?, finished_at = ? WHERE job_id = ? AND status = 'pending'`)
+    .run(INTERRUPTED_ERROR, nowIso(), jobId).changes;
 
 export const countOpenItems = (jobId: string): number =>
   (
@@ -122,16 +138,24 @@ export const countOpenItems = (jobId: string): number =>
     }
   ).n;
 
-export const getOutcomeCounts = (jobId: string): { videosDone: number; itemsDone: number; itemsTotal: number } => {
+export const getOutcomeCounts = (
+  jobId: string,
+): { videosDone: number; itemsDone: number; itemsTotal: number; interrupted: number } => {
   const r = getDb()
     .prepare(
-      `SELECT SUM(kind = 'video' AND status = 'done') AS videos_done,
-              SUM(status = 'done')                    AS items_done,
-              COUNT(*)                                AS items_total
+      `SELECT SUM(kind = 'video' AND status = 'done')    AS videos_done,
+              SUM(status = 'done')                       AS items_done,
+              SUM(status = 'cancelled' AND error = ?)    AS interrupted,
+              COUNT(*)                                   AS items_total
        FROM job_items WHERE job_id = ?`,
     )
-    .get(jobId) as { videos_done: number | null; items_done: number | null; items_total: number };
-  return { videosDone: r.videos_done ?? 0, itemsDone: r.items_done ?? 0, itemsTotal: r.items_total };
+    .get(INTERRUPTED_ERROR, jobId) as {
+    videos_done: number | null;
+    items_done: number | null;
+    interrupted: number | null;
+    items_total: number;
+  };
+  return { videosDone: r.videos_done ?? 0, itemsDone: r.items_done ?? 0, itemsTotal: r.items_total, interrupted: r.interrupted ?? 0 };
 };
 
 export function finishJob(jobId: string, status: Extract<JobStatus, 'completed' | 'partial' | 'failed'>, error: string | null): void {

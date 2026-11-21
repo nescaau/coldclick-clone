@@ -7,6 +7,7 @@
 import { seedAvatarsOnce } from './avatar-service';
 import { encryptLegacyGeminiKeys } from './gemini-key-service';
 import { seedProductsOnce } from './product-service';
+import { recoverStuckTranscriptions } from './transcription-service';
 import { encryptLegacyWhisperKey } from './settings-service';
 
 declare global {
@@ -17,6 +18,7 @@ declare global {
 export function ensureBootstrapped(): void {
   if (globalThis.__coldclickBooted) return;
   encryptLegacyGeminiKeys();
+  recoverStuckTranscriptions();
   encryptLegacyWhisperKey();
   seedAvatarsOnce();
   seedProductsOnce();

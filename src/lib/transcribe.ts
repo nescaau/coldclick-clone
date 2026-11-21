@@ -20,9 +20,9 @@ const API_MAX_BYTES = 25 * 1024 * 1024;
 
 export class TranscriptionConfigError extends Error {}
 
-function runFfmpeg(args: string[]): Promise<{ ok: boolean; missing: boolean; stderr: string }> {
+function runFfmpeg(args: string[], signal?: AbortSignal): Promise<{ ok: boolean; missing: boolean; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'], signal });
     let stderr = '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     child.on('error', (e: NodeJS.ErrnoException) => resolve({ ok: false, missing: e.code === 'ENOENT', stderr: e.message }));
@@ -55,6 +55,7 @@ interface VerboseResponse {
 export async function transcribeVideoFile(
   videoRelPath: string,
   onStep?: (step: TranscriptionStep) => void,
+  signal?: AbortSignal,
 ): Promise<TranscriptionResult> {
   const cfg = getWhisperConfig();
   if (!cfg.apiKey) {
@@ -69,10 +70,12 @@ export async function transcribeVideoFile(
     // 1) Tenta extrair só o áudio (reduz de centenas de MB para poucos MB).
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'coldclick-audio-'));
     const audioPath = path.join(tmpDir, 'audio.mp3');
-    const ff = await runFfmpeg(['-y', '-i', source, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '32k', audioPath]);
+    const ff = await runFfmpeg(['-y', '-i', source, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '32k', audioPath], signal);
 
     if (ff.ok) {
       uploadPath = audioPath;
+    } else if (signal?.aborted) {
+      signal.throwIfAborted();
     } else if (ff.missing) {
       // 2) Sem ffmpeg: só dá para enviar o próprio vídeo se couber no limite da API.
       const { size } = await stat(source);
@@ -105,7 +108,7 @@ export async function transcribeVideoFile(
         method: 'POST',
         headers: { Authorization: `Bearer ${cfg.apiKey}` },
         body: form,
-        signal: AbortSignal.timeout(10 * 60_000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10 * 60_000)]) : AbortSignal.timeout(10 * 60_000),
       });
     };
 
@@ -118,6 +121,7 @@ export async function transcribeVideoFile(
       throw new Error(`A API de transcrição respondeu ${res.status}: ${detail || res.statusText}`);
     }
     const data = (await res.json()) as VerboseResponse;
+    signal?.throwIfAborted();
     onStep?.('received');
     return {
       text: (data.text ?? '').trim(),

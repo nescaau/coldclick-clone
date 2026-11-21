@@ -8,6 +8,7 @@ import { AppError } from '../errors';
 import { maskSecret } from '../format';
 import { countGeminiKeys } from '../repo/gemini-keys';
 import { getRawSetting, setRawSetting } from '../repo/settings';
+import { prepareStorageMigration, type StorageMigration } from '../storage-migrate';
 import type { PublicSettingsDTO } from '../types';
 
 /** Configuração inválida (HTTP 400). */
@@ -96,9 +97,11 @@ export interface SettingsUpdate {
 export function updateSettings(input: SettingsUpdate): PublicSettingsDTO {
   // Valida tudo antes de gravar qualquer coisa: a atualização é "tudo ou nada".
   let storageDir: string | undefined;
+  let target: string | undefined;
   if (input.storageDir !== undefined) {
     storageDir = input.storageDir.trim();
-    assertWritableDir(storageDir ? resolveUserPath(storageDir) : DEFAULT_STORAGE_DIR);
+    target = storageDir ? resolveUserPath(storageDir) : DEFAULT_STORAGE_DIR;
+    assertWritableDir(target);
   }
   let baseUrl: string | undefined;
   if (input.whisperBaseUrl !== undefined) {
@@ -108,7 +111,18 @@ export function updateSettings(input: SettingsUpdate): PublicSettingsDTO {
     }
   }
 
-  if (storageDir !== undefined) setRawSetting('storage_dir', storageDir);
+  // Troca de pasta: os arquivos existentes são COPIADOS e conferidos antes; a pasta antiga só é esvaziada
+  // depois que a nova configuração foi gravada (nada fica órfão nem se perde se algo falhar).
+  let migration: StorageMigration | undefined;
+  if (storageDir !== undefined && target) {
+    migration = prepareStorageMigration(getStorageDir(), target);
+    try {
+      setRawSetting('storage_dir', storageDir);
+    } catch (e) {
+      migration.rollback();
+      throw e;
+    }
+  }
   if (baseUrl !== undefined) setRawSetting('whisper_base_url', baseUrl || DEFAULTS.whisper_base_url);
   if (input.whisperModel !== undefined) setRawSetting('whisper_model', input.whisperModel.trim() || DEFAULTS.whisper_model);
   if (input.whisperApiKey !== undefined) {
@@ -118,6 +132,7 @@ export function updateSettings(input: SettingsUpdate): PublicSettingsDTO {
   if (input.geminiPromptModel !== undefined) {
     setRawSetting('gemini_prompt_model', input.geminiPromptModel.trim() || DEFAULTS.gemini_prompt_model);
   }
+  migration?.commit();
   return getPublicSettings();
 }
 

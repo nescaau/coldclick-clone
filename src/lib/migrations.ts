@@ -223,4 +223,94 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_job_events_job ON job_events(job_id, created_at);
   `,
+
+  /* v4 — endurecimento (revisão)
+   *  - jobs é reconstruída: CHECKs em formato criativo/modo do roteiro/modelo de imagem, `queued_at`
+   *    (ordem da fila; reenfileirar não fura mais a fila) e backfill de `avatars_json` dos trabalhos legados;
+   *  - gemini_keys é reconstruída: some o UNIQUE(api_key) (inútil com criptografia de IV aleatório) e entra
+   *    `key_hash` (HMAC) UNIQUE para detectar duplicadas; some `label` (não usado);
+   *  - contas ganham `tier` (plano), avatares ganham escopo (pessoal/global), gênero e idade;
+   *  - navegadores guardam quando o estado da sessão do Flow foi informado (TTL no heartbeat).
+   * A reconstrução exige foreign_keys=OFF; quem aplica as migrações (lib/migrate.ts) cuida disso e confere
+   * `PRAGMA foreign_key_check` ao final. */
+  `
+  ALTER TABLE google_accounts ADD COLUMN tier TEXT NOT NULL DEFAULT 'UNKNOWN';
+
+  ALTER TABLE avatars ADD COLUMN scope  TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal','global'));
+  ALTER TABLE avatars ADD COLUMN gender TEXT;
+  ALTER TABLE avatars ADD COLUMN age    INTEGER;
+
+  ALTER TABLE extension_browsers ADD COLUMN flow_reported_at TEXT;
+
+  CREATE TABLE gemini_keys_new (
+    id           TEXT PRIMARY KEY,
+    api_key      TEXT NOT NULL,                  -- segredo criptografado (lib/crypto.ts)
+    key_hash     TEXT UNIQUE,                    -- HMAC-SHA256 do segredo: detecta duplicadas sem decifrar
+    key_last4    TEXT NOT NULL DEFAULT '',
+    position     INTEGER NOT NULL DEFAULT 0,
+    uses         INTEGER NOT NULL DEFAULT 0,
+    last_used_at TEXT,
+    last_error   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (${NOW})
+  );
+  INSERT INTO gemini_keys_new (id, api_key, key_last4, position, uses, last_used_at, last_error, created_at)
+    SELECT id, api_key, key_last4, position, uses, last_used_at, last_error, created_at FROM gemini_keys;
+  DROP TABLE gemini_keys;
+  ALTER TABLE gemini_keys_new RENAME TO gemini_keys;
+
+  CREATE TABLE jobs_new (
+    id                 TEXT PRIMARY KEY,
+    kind               TEXT NOT NULL DEFAULT 'generation' CHECK (kind IN ('generation','transcription')),
+    title              TEXT NOT NULL,
+    product            TEXT,
+    status             TEXT NOT NULL DEFAULT 'queued'
+                       CHECK (status IN ('queued','running','completed','partial','failed','cancelled')),
+    video_id           TEXT REFERENCES videos(id) ON DELETE RESTRICT,
+    avatar_id          TEXT REFERENCES avatars(id) ON DELETE SET NULL,
+    avatar_name        TEXT NOT NULL,
+    avatar_description TEXT NOT NULL,
+    transcript         TEXT NOT NULL DEFAULT '',
+    transcript_source  TEXT NOT NULL DEFAULT 'none' CHECK (transcript_source IN ('whisper','manual','none')),
+    copy_text          TEXT NOT NULL DEFAULT '',
+    language           TEXT NOT NULL DEFAULT 'original',
+    format             TEXT NOT NULL,
+    variations         INTEGER NOT NULL,
+    model              TEXT NOT NULL,
+    resolution         TEXT NOT NULL,
+    max_generations    INTEGER NOT NULL,
+    generations_used   INTEGER NOT NULL DEFAULT 0,
+    failed_attempts    INTEGER NOT NULL DEFAULT 0,
+    creative_format    TEXT NOT NULL DEFAULT 'original-recipe' CHECK (creative_format IN
+      ('original-recipe','split-screen','car-selfie','home-selfie','american-kitchen','podcast','mirror-selfie',
+       'before-after','doctor-office','pov-hands','ugc-testimonial','fat-melting')),
+    script_mode        TEXT NOT NULL DEFAULT 'keep' CHECK (script_mode IN ('keep','adapt','new')),
+    image_model        TEXT NOT NULL DEFAULT 'nano-banana-2.1' CHECK (image_model IN
+      ('nano-banana-2.1','nano-banana-pro','nano-banana-2-lite')),
+    cta                TEXT NOT NULL DEFAULT '',
+    avatars_json       TEXT NOT NULL DEFAULT '[]',
+    axes_json          TEXT NOT NULL DEFAULT '{}',
+    scenes_json        TEXT NOT NULL DEFAULT '[]',
+    error              TEXT,
+    created_at         TEXT NOT NULL DEFAULT (${NOW}),
+    queued_at          TEXT NOT NULL DEFAULT (${NOW}),   -- ordem da fila (atualizada ao reenfileirar)
+    started_at         TEXT,
+    finished_at        TEXT
+  );
+  INSERT INTO jobs_new (id, kind, title, product, status, video_id, avatar_id, avatar_name, avatar_description,
+      transcript, transcript_source, copy_text, language, format, variations, model, resolution, max_generations,
+      generations_used, failed_attempts, creative_format, script_mode, image_model, cta,
+      avatars_json, axes_json, scenes_json, error, created_at, queued_at, started_at, finished_at)
+    SELECT id, kind, title, product, status, video_id, avatar_id, avatar_name, avatar_description,
+      transcript, transcript_source, copy_text, language, format, variations, model, resolution, max_generations,
+      generations_used, failed_attempts, creative_format, script_mode, image_model, cta,
+      CASE WHEN avatars_json = '[]' AND kind = 'generation' AND avatar_name <> 'Pessoa original'
+           THEN json_array(json_object('id', COALESCE(avatar_id, ''), 'name', avatar_name,
+                                       'description', avatar_description, 'voice', ''))
+           ELSE avatars_json END,
+      axes_json, scenes_json, error, created_at, created_at, started_at, finished_at
+    FROM jobs;
+  DROP TABLE jobs;
+  ALTER TABLE jobs_new RENAME TO jobs;
+  CREATE INDEX idx_jobs_status ON jobs(status, queued_at);
+  `,
 ];

@@ -21,11 +21,12 @@ import {
   type JobRow,
 } from '../repo/jobs';
 import { findVideoRow } from '../repo/videos';
-import type { Scene } from '../scenes';
+import { deriveCopyText, type Scene } from '../scenes';
 import type { CreateJobInput } from '../schemas';
 import { deleteDir } from '../storage';
 import type { JobAvatarDTO, JobDetailDTO, JobDTO, JobItemDTO, JobPhase, JobPreviewDTO } from '../types';
 import { countEligibleAccounts } from './account-service';
+import { cancelTranscription } from './transcription-service';
 
 /** Nome do "avatar" quando o trabalho mantém a pessoa original do vídeo. */
 export const ORIGINAL_PERSON_NAME = 'Pessoa original';
@@ -74,6 +75,7 @@ const toJobDTO = (r: JobRow): JobDTO => ({
   itemsOpen: r.items_open,
   stepsDone: r.steps_done,
   stepsTotal: r.kind === 'transcription' ? TRANSCRIPTION_STEPS : 0,
+  stepsPercent: r.kind === 'transcription' ? Math.min(100, r.steps_weight) : 0,
   error: r.error,
   createdAt: r.created_at,
   startedAt: r.started_at,
@@ -166,7 +168,7 @@ export function createJob(input: CreateJobInput): JobDetailDTO {
         avatarDescription: first?.description ?? '',
         transcript: input.transcript,
         transcriptSource: input.transcriptSource,
-        copyText: input.copyText,
+        copyText: deriveCopyText(input.scenes, input.copyText),
         language: input.outputLanguage,
         format: '9:16', // o formato de tela é decidido pelo "Formato criativo"
         variations,
@@ -190,9 +192,17 @@ export function createJob(input: CreateJobInput): JobDetailDTO {
 
 /** Cancela um trabalho em fila/andamento (e os itens que ainda não terminaram). */
 export function cancelJob(id: string): JobDetailDTO {
-  if (!findJobRow(id)) throw notFound('Trabalho');
-  if (!cancelJobRow(id)) throw conflict('Só é possível cancelar trabalhos na fila ou em andamento');
-  addJobEvent(id, 'Trabalho cancelado');
+  const row = findJobRow(id);
+  if (!row) throw notFound('Trabalho');
+  if (row.kind === 'transcription') {
+    // Aborta a chamada em andamento; o evento "Transcrição cancelada" é registrado lá.
+    if (!cancelTranscription(id)) throw conflict('Só é possível cancelar transcrições em andamento');
+    return getJob(id);
+  }
+  transaction(() => {
+    if (!cancelJobRow(id)) throw conflict('Só é possível cancelar trabalhos na fila ou em andamento');
+    addJobEvent(id, 'Trabalho cancelado');
+  });
   return getJob(id);
 }
 
@@ -216,6 +226,9 @@ export function retryFailedItems(id: string): JobDetailDTO {
 }
 
 export function removeJob(id: string): void {
+  if (!findJobRow(id)) throw notFound('Trabalho');
+  // Transcrição em andamento: aborta antes de apagar (a conclusão tardia não grava em trabalho excluído).
+  cancelTranscription(id);
   if (!deleteJobRow(id)) throw notFound('Trabalho');
   deleteDir(`outputs/${id}`);
 }

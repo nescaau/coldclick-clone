@@ -4,6 +4,7 @@
  */
 import type { FormatId, ModelId, ResolutionId } from '../catalog';
 import { getDb, nowIso } from '../db';
+import { TRANSCRIPTION_STEP_WEIGHTS } from '../transcription-steps';
 import type { ItemKind, ItemStatus, JobKind, JobStatus, TranscriptSource } from '../types';
 
 export interface JobRow {
@@ -37,6 +38,7 @@ export interface JobRow {
   scenes_json: string; // JSON: cenas da fala
   error: string | null;
   created_at: string;
+  queued_at: string;
   started_at: string | null;
   finished_at: string | null;
   // contagens derivadas (calculadas na leitura — nunca armazenadas, para não divergirem dos itens)
@@ -48,6 +50,8 @@ export interface JobRow {
   images_open: number;
   steps_done: number;
   steps_failed: number;
+  /** Soma dos pesos das etapas concluídas (0–100), ver lib/transcription-steps.ts. */
+  steps_weight: number;
   thumbnail_path: string | null;
 }
 
@@ -62,6 +66,13 @@ export interface JobItemRow {
   error: string | null;
 }
 
+/** Marca (no campo `error` do item) os itens parados por esgotar o teto de gerações — não são falhas. */
+export const INTERRUPTED_ERROR = 'Interrompido: teto de gerações do trabalho atingido';
+
+const STEP_WEIGHT_CASE = Object.entries(TRANSCRIPTION_STEP_WEIGHTS)
+  .map(([label, weight]) => `WHEN '${label.replace(/'/g, "''")}' THEN ${weight}`)
+  .join(' ');
+
 const COUNT = (where: string) => `(SELECT COUNT(*) FROM job_items i WHERE i.job_id = j.id AND ${where})`;
 
 const JOB_SELECT = `
@@ -75,6 +86,7 @@ const JOB_SELECT = `
     ${COUNT(`i.kind = 'image' AND i.status IN ('pending','running')`)} AS images_open,
     (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.status = 'done')   AS steps_done,
     (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.status = 'failed') AS steps_failed,
+    (SELECT COALESCE(SUM(CASE e.label ${STEP_WEIGHT_CASE} ELSE 0 END), 0) FROM job_events e WHERE e.job_id = j.id AND e.status = 'done') AS steps_weight,
     (SELECT i.file_path FROM job_items i WHERE i.job_id = j.id AND i.kind = 'image' AND i.status = 'done'
        ORDER BY i.variation LIMIT 1)                              AS thumbnail_path
   FROM jobs j
@@ -141,12 +153,14 @@ export function insertJobWithItems(job: NewJobRow, newItemId: () => string): voi
 /** Marca como cancelado se (e só se) estiver em fila/andamento. Cancela também os itens abertos. */
 export function cancelJobRow(id: string): boolean {
   const db = getDb();
-  const res = db
-    .prepare(`UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status IN ('queued','running')`)
-    .run(nowIso(), id);
-  if (res.changes === 0) return false;
-  db.prepare(`UPDATE job_items SET status = 'cancelled', ready_at = NULL WHERE job_id = ? AND status IN ('pending','running')`).run(id);
-  return true;
+  return db.transaction(() => {
+    const res = db
+      .prepare(`UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status IN ('queued','running')`)
+      .run(nowIso(), id);
+    if (res.changes === 0) return false;
+    db.prepare(`UPDATE job_items SET status = 'cancelled', ready_at = NULL WHERE job_id = ? AND status IN ('pending','running')`).run(id);
+    return true;
+  })();
 }
 
 export const getJobStatus = (id: string): { status: JobStatus; generations_used: number } | null =>
@@ -154,21 +168,24 @@ export const getJobStatus = (id: string): { status: JobStatus; generations_used:
     | { status: JobStatus; generations_used: number }
     | undefined) ?? null;
 
-/** Devolve os itens que falharam em definitivo ao estado "pendente", com tentativas novas. Retorna quantos. */
+/**
+ * Devolve ao estado "pendente", com tentativas novas, os itens que falharam em definitivo E os que ficaram
+ * interrompidos por esgotar o teto de gerações (marcados com `INTERRUPTED_ERROR`). Retorna quantos.
+ */
 export function resetFailedItems(jobId: string): number {
   return getDb()
     .prepare(
       `UPDATE job_items SET status = 'pending', attempts = 0, error = NULL, ready_at = NULL, finished_at = NULL
-       WHERE job_id = ? AND status = 'failed'`,
+       WHERE job_id = ? AND (status = 'failed' OR (status = 'cancelled' AND error = ?))`,
     )
-    .run(jobId).changes;
+    .run(jobId, INTERRUPTED_ERROR).changes;
 }
 
-/** Recoloca o trabalho na fila com um novo teto de gerações. */
+/** Recoloca o trabalho no FIM da fila (queued_at = agora) com um novo teto de gerações. */
 export function requeueJob(jobId: string, maxGenerations: number): void {
   getDb()
-    .prepare(`UPDATE jobs SET status = 'queued', finished_at = NULL, error = NULL, max_generations = ? WHERE id = ?`)
-    .run(maxGenerations, jobId);
+    .prepare(`UPDATE jobs SET status = 'queued', queued_at = ?, finished_at = NULL, error = NULL, max_generations = ? WHERE id = ?`)
+    .run(nowIso(), maxGenerations, jobId);
 }
 
 export const deleteJobRow = (id: string): boolean => getDb().prepare('DELETE FROM jobs WHERE id = ?').run(id).changes > 0;
@@ -192,15 +209,37 @@ export function insertTranscriptionJob(job: { id: string; title: string; videoId
     .run({ ...job, startedAt: nowIso() });
 }
 
-export function completeTranscriptionJob(id: string, transcript: string, scenesJson: string): void {
-  getDb()
-    .prepare(
-      `UPDATE jobs SET status = 'completed', transcript = ?, transcript_source = 'whisper', copy_text = ?, scenes_json = ?, finished_at = ?
-       WHERE id = ?`,
-    )
-    .run(transcript, transcript, scenesJson, nowIso(), id);
+/** Conclui a transcrição SOMENTE se ainda estiver em andamento (cancelada/excluída no meio-tempo → false). */
+export function completeTranscriptionJob(id: string, transcript: string, scenesJson: string): boolean {
+  return (
+    getDb()
+      .prepare(
+        `UPDATE jobs SET status = 'completed', transcript = ?, transcript_source = 'whisper', copy_text = ?, scenes_json = ?, finished_at = ?
+         WHERE id = ? AND kind = 'transcription' AND status = 'running'`,
+      )
+      .run(transcript, transcript, scenesJson, nowIso(), id).changes > 0
+  );
 }
 
-export function failTranscriptionJob(id: string, error: string): void {
-  getDb().prepare(`UPDATE jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`).run(error.slice(0, 500), nowIso(), id);
+/** Marca a falha SOMENTE se ainda estiver em andamento (não sobrescreve "cancelada"). */
+export function failTranscriptionJob(id: string, error: string): boolean {
+  return (
+    getDb()
+      .prepare(`UPDATE jobs SET status = 'failed', error = ?, finished_at = ? WHERE id = ? AND kind = 'transcription' AND status = 'running'`)
+      .run(error.slice(0, 500), nowIso(), id).changes > 0
+  );
 }
+
+export function cancelTranscriptionJob(id: string): boolean {
+  return (
+    getDb()
+      .prepare(`UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND kind = 'transcription' AND status = 'running'`)
+      .run(nowIso(), id).changes > 0
+  );
+}
+
+export const listRunningTranscriptionIds = (): string[] =>
+  (getDb().prepare(`SELECT id FROM jobs WHERE kind = 'transcription' AND status = 'running'`).all() as { id: string }[]).map((r) => r.id);
+
+export const listTranscriptionJobIdsForVideo = (videoId: string): string[] =>
+  (getDb().prepare(`SELECT id FROM jobs WHERE kind = 'transcription' AND video_id = ?`).all(videoId) as { id: string }[]).map((r) => r.id);

@@ -16,15 +16,18 @@ Requisitos: **Node.js 20.9+** (recomendado 22 — há um `.nvmrc`).
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://127.0.0.1:3000  (também responde em http://localhost:3000)
 ```
 
-O banco SQLite e a pasta de arquivos são criados em `./data/` na primeira execução (3 avatares de exemplo incluídos).
+`dev` e `start` já sobem com `-H 127.0.0.1`: o servidor **só aceita conexões da própria máquina**. Para acessar de outro
+aparelho da rede, rode `npx next dev -H 0.0.0.0` **e** liste o host em `COLDCLICK_ALLOWED_HOSTS` (ver "Segurança").
+
+O banco SQLite e a pasta de arquivos são criados em `./data/` na primeira execução (3 avatares de exemplo + 1 global incluídos).
 Opcional: `ffmpeg` (`brew install ffmpeg`) para transcrever vídeos grandes (o app extrai só o áudio antes de enviar ao Whisper).
 
 Outros comandos: `npm run build && npm start`, `npm run typecheck`, `npm test`.
 Variáveis (todas opcionais, ver `.env.example`): `COLDCLICK_DATA_DIR`, `COLDCLICK_SECRET_KEY`, `COLDCLICK_SIM_FAILURE_RATE`,
-`COLDCLICK_SIM_SPEED`, `COLDCLICK_REQUIRE_FLOW`.
+`COLDCLICK_SIM_SPEED`, `COLDCLICK_REQUIRE_FLOW`, `COLDCLICK_ALLOWED_HOSTS`.
 
 > ⚠️ Não rode `next build` na mesma pasta enquanto o `next dev` estiver ligado: os dois escrevem em `.next/`. Se isso
 > acontecer, pare o dev, apague `.next/` e suba de novo.
@@ -68,17 +71,29 @@ rota (src/app/api/**)  →  serviço (src/lib/services/**)  →  repositório (s
 
 ### Banco de dados e migrações
 
-`src/lib/migrations.ts` — lista de migrações aplicadas uma vez, em ordem (`PRAGMA user_version`); para evoluir, **acrescente** um item.
+`src/lib/migrations.ts` — lista de migrações aplicadas **uma vez, em ordem v1 → v2 → v3 → v4** (`PRAGMA user_version`); para
+evoluir, **acrescente** um item. Quem as aplica é `src/lib/migrate.ts`: cada migração roda em `BEGIN IMMEDIATE` e **relê a versão
+sob o lock** (dois processos subindo juntos não duplicam colunas), com `foreign_keys` desligado só durante a aplicação e
+`PRAGMA foreign_key_check` antes de religar. Uma migração que falha é revertida por inteiro.
 - **v1**: schema inicial.
-- **v3**: voz dos avatares, catálogo de produtos, tipo de trabalho (geração/transcrição), formato criativo, modo do roteiro, modelo de imagem, CTA, snapshots JSON (avatares, eixos, cenas) e `job_events`.
 - **v2**: prioridade em contas/chaves; segredos de chaves Gemini criptografados; remoção de colunas derivadas
   (`jobs.planned_*`) e inativas (`gemini_keys.enabled/cooldown_until`); `extension_browsers` + `pairing_codes` (vários navegadores).
-- Dados legados em texto puro (chaves Gemini/Whisper) são criptografados no bootstrap.
+- **v3**: voz dos avatares, catálogo de produtos, tipo de trabalho (geração/transcrição), formato criativo, modo do roteiro,
+  modelo de imagem, CTA, snapshots JSON (avatares, eixos, cenas) e `job_events`.
+- **v4** (endurecimento): `jobs` reconstruída com **CHECKs** (formato criativo, modo do roteiro, modelo de imagem), `queued_at`
+  (ordem da fila) e **backfill de `avatars_json`** dos trabalhos legados (a partir de `avatar_id/avatar_name`; um trabalho legado
+  com vários avatares vira uma entrada única com os nomes juntos — o histórico antigo não guardava a lista); `gemini_keys` sem
+  `UNIQUE(api_key)` (inútil com IV aleatório) e com `key_hash` (HMAC) `UNIQUE`; `google_accounts.tier`; avatares com
+  `scope/gender/age`; `extension_browsers.flow_reported_at`.
+- Dados legados em texto puro (chaves Gemini/Whisper) são criptografados no bootstrap, e `key_hash` é preenchido (duplicatas
+  legadas são removidas).
 
 ### Segredos
 
 Chaves de API são guardadas **criptografadas (AES-256-GCM)**. A chave mestra vem de `COLDCLICK_SECRET_KEY` ou de
-`data/.secret.key` (gerada na 1ª execução). Protege contra vazamento do `.db` isolado — em produção, use um KMS.
+`data/.secret.key` (criada na 1ª execução com a flag `wx`). Se o arquivo existir mas estiver corrompido o app **falha com erro
+claro** — nunca gera outra chave em silêncio (isso tornaria ilegíveis as chaves já salvas). Protege contra vazamento do `.db`
+isolado — em produção, use um KMS. Chaves Gemini duplicadas são detectadas por HMAC (`key_hash`), sem decifrar nada.
 O navegador só recebe máscaras (`••••nzeQ`). Tokens da extensão: só o hash SHA-256 é guardado.
 
 ### Transcrição, cenas e "saídas"
@@ -86,6 +101,16 @@ O navegador só recebe máscaras (`••••nzeQ`). Tokens da extensão: só 
 - `POST /api/transcriptions` cria um **trabalho de transcrição** (`jobs.kind = 'transcription'`), chama o endpoint Whisper com
   tempos por palavra e divide a fala em **cenas** (`lib/scenes.ts`, puro e testado): frases inteiras agrupadas com no máximo
   **7 s de fala** por cena (clipe de até 8 s, reservando o fim para o corte). Cada etapa vira um evento ("Etapas registradas").
+- A API real devolve **palavras sem pontuação** e **segmentos com pontuação**: `alignWordsToSegments` alinha os dois (a copy
+  mantém a pontuação e os fins de frase são detectados). Unidades longas demais (segmento inteiro, frase estimada pelo texto)
+  são **subdivididas**: nenhuma cena passa do limite.
+- O servidor valida as cenas (índices 1..N, fim ≥ início, ≤ 8 s) e **deriva a copy delas** — o `copyText` do cliente é ignorado
+  quando há cenas.
+- Percentual da transcrição = soma de **pesos por etapa** (`lib/transcription-steps.ts`: solicitada 5 + áudio preparado 15 +
+  enviado 15 = **35%**, o valor de "Falhou · 35%" da referência; concluída = 100%).
+- Cancelar/excluir uma transcrição **em andamento** aborta a chamada de verdade (ffmpeg + HTTP) e a conclusão tardia nunca a
+  ressuscita. Se o servidor cair no meio, o bootstrap marca a transcrição órfã como **falha** (com evento). Um vídeo com
+  transcrições pode ser excluído (elas somem junto); só trabalhos de **geração** o bloqueiam.
 - **Saídas = avatares escolhidos** (1 se "Pessoa original"); a variação N usa o avatar N mod total. `POST /api/jobs/estimate`
   ("Preparar geração") valida o pedido e devolve saídas, estimativa e contas elegíveis sem gravar nada.
 - O executor da fila só processa trabalhos de **geração**.
@@ -101,7 +126,11 @@ trabalho: queued ▶ running ▶ completed | partial | failed | cancelled
 ```
 
 Teto de gerações = base + folga (`estimate.ts`, calibrada para "20 variações → até 62"). "N falhas" = tentativas que falharam.
-"Reexecutar falhas" dá tentativas novas só aos itens que falharam e amplia o teto.
+Quando o teto (créditos/cota) esgota, o lote é **interrompido**, não vira uma pilha de falhas: os itens restantes ficam
+"cancelados" com a marca de interrupção, o evento "Geração interrompida: teto de gerações atingido" é registrado e o trabalho
+termina **parcial** — inclusive "0 de 20 vídeos concluídos · 0 falhas", estado visto na referência.
+"Reexecutar falhas" dá tentativas novas aos itens que falharam **e aos interrompidos**, amplia o teto e põe o trabalho no **fim**
+da fila (`queued_at = agora`; reenfileirar não fura a vez de quem já esperava).
 
 ### Regras de rotação (iguais às da referência)
 
@@ -121,8 +150,20 @@ Pareamento de **vários** navegadores: nome do Chrome → código de uso único 
 
 ### Segurança
 
-Importação por URL bloqueia redes internas (SSRF) e revalida redirecionamentos; arquivos servidos com CSP `sandbox`;
-limite global de tentativas erradas no pareamento; sem autenticação de usuário (app local).
+App **local, sem login de usuário**; as defesas abaixo protegem contra páginas maliciosas abertas no mesmo computador:
+
+- **Bind em 127.0.0.1** (scripts `dev`/`start`) + `middleware.ts`: só aceita `Host` localhost/127.0.0.1/[::1] (ou
+  `COLDCLICK_ALLOWED_HOSTS`) — barra DNS rebinding — e recusa requisições que alteram dados vindas de outra origem
+  (`Sec-Fetch-Site`/`Origin`). As rotas da extensão (pareamento e heartbeat) só passam pela checagem de Host; elas se protegem
+  por código de uso único / token Bearer.
+- Corpos JSON exigem `Content-Type: application/json` (um formulário/`text/plain` de outro site não passa).
+- **Importação por URL (SSRF)**: `lib/net-guard.ts` usa `net.BlockList`, **desmapeia IPv6 embutido** (`::ffff:7f00:1`,
+  `::ffff:a9fe:a9fe`, NAT64 `64:ff9b::/96`, 6to4, IPv4-compatível), bloqueia `fe80::/10`, `fec0::/10`, ULA, Teredo e multicast,
+  exige que **todos** os endereços do nome sejam públicos e **fixa o IP validado na conexão** (sem segunda resolução → sem DNS
+  rebinding). Redirecionamentos são revalidados salto a salto e o corpo das respostas 3xx é descartado.
+- Arquivos servidos com CSP `sandbox`; limite global de tentativas erradas no pareamento; segredos criptografados em repouso.
+- Trocar a **pasta de armazenamento** copia os arquivos para a nova pasta, confere (nº de arquivos e bytes) e só então esvazia a
+  antiga; recusa destino não vazio ou aninhado. Nada fica órfão.
 
 ---
 
@@ -131,11 +172,27 @@ limite global de tentativas erradas no pareamento; sem autenticação de usuári
 `reference/*.json` (estilos computados) e `reference/*.snap.txt` (textos/hierarquia) vieram da plataforma de referência.
 Os tokens do tema estão em `src/app/globals.css` + `tailwind.config.ts` com os **valores exatos** (`--background #080c15`,
 `--card #0d1422`, `--sidebar #0b1323`, `--primary #2b6bff`, `--border #24324a`, `--destructive #f0555a`, `--radius 12px`, fonte Inter 14px).
-O tema **claro** não existe nas capturas: a paleta clara é estimada.
+O tema **claro** foi medido **apenas na página Trabalhos** (`reference/shots/jobs-light.png`, `jobs-light.snap.txt`); nas demais
+telas a paleta clara é derivada dos mesmos tokens e **não foi conferida contra a referência**.
 
 ## Roadmap
 
 - **Fase 3 — Automação real do Flow**: orquestrador (prompts com Gemini + `acquireGeminiKey`), `acquireAccount` no executor,
   `content.js` da extensão (plano no topo do arquivo), recebimento de arquivos/créditos, custo real por modelo/resolução.
-- **Pendências de fidelidade**: etapas 2–4 do wizard só têm os textos presentes nos dumps (`reference/wizard.json`);
-  "Tags/Etiquetas", avatares globais/inativos e vários avatares por trabalho existem só na plataforma original.
+- **Pendências de fidelidade**: "Tags/Etiquetas" e avatares **inativos** existem só na plataforma original (a aba "Inativos" fica
+  vazia aqui).
+
+### Pontos que NÃO foram verificados contra a referência (honestidade sobre o que é inferência)
+
+- **Modal "Confirmar gerações reais no Flow"** (Revisão → "Preparar geração"): nenhum `.snap.txt` mostra esse estado; o modal
+  existe, mas seu texto/layout **não está verificado**. Capture o estado real para conferirmos.
+- **"Ponte validada por eco em N ms"**: os textos são os da referência, mas o `N` é o **tempo real de ida e volta ao estúdio**
+  (consulta do estado da ponte), não um eco medido na extensão — a extensão desta réplica ainda não responde a "ping".
+- **Diálogo de transcrição** usa os literais da referência ("…no Google Flow", "consumir créditos"), mas aqui a transcrição
+  usa o **endpoint Whisper configurado** (não o Flow). O texto é fiel à referência, não à implementação.
+- **Contas Flow**: "Adicionar conta" e "Remover conta" são mantidos (necessários para a réplica), mas **não aparecem** na captura
+  da referência; o contador de ciclo (`x/2 vídeos`) saiu da linha de saldo para seguir o texto da referência.
+- **Presets** dos eixos Roupa/Cenário/Objeto são inventados (a referência não lista as opções).
+- **Avatar global "Dawn"**: a voz aparece truncada no snapshot ("…Natural imp..."); guardamos até a última frase completa.
+  O cartão do assistente mostra "Sem foto" sem ícone de pessoa (instrução da revisão); o snapshot tem um `svg_root` nesse
+  cartão que não conseguimos identificar.

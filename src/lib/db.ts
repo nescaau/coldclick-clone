@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import { DATA_DIR, DB_PATH } from './config';
+import { runMigrations } from './migrate';
 import { MIGRATIONS } from './migrations';
 
 type Db = Database.Database;
@@ -11,25 +12,15 @@ declare global {
   var __coldclickDb: Db | undefined;
 }
 
-function migrate(db: Db): void {
-  const current = db.pragma('user_version', { simple: true }) as number;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[v]);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
-  }
-}
-
 /** Conexão única com o SQLite (síncrona, em modo WAL). */
 export function getDb(): Db {
   if (!globalThis.__coldclickDb) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
-    migrate(db);
+    runMigrations(db, MIGRATIONS); // mexe em foreign_keys por conta própria e as deixa ON
+    db.pragma('foreign_keys = ON');
     globalThis.__coldclickDb = db;
   }
   return globalThis.__coldclickDb;

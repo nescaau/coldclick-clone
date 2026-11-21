@@ -48,8 +48,8 @@ export function updateVideoTranscript(id: string, text: string, language: string
     .run(text, language, scenesJson, id);
 }
 
-/** Quantos trabalhos usam este vídeo. */
+/** Quantos trabalhos de GERAÇÃO usam este vídeo (transcrições não bloqueiam a exclusão). */
 export const countJobsUsingVideo = (id: string): number =>
-  (getDb().prepare('SELECT COUNT(*) AS n FROM jobs WHERE video_id = ?').get(id) as { n: number }).n;
+  (getDb().prepare(`SELECT COUNT(*) AS n FROM jobs WHERE video_id = ? AND kind = 'generation'`).get(id) as { n: number }).n;
 
 export const deleteVideoRow = (id: string): boolean => getDb().prepare('DELETE FROM videos WHERE id = ?').run(id).changes > 0;

@@ -14,6 +14,8 @@ export interface AccountRow {
   total_images: number;
   last_used_at: string | null;
   credits_updated_at: string | null;
+  /** Plano/tier da conta no Flow ("UNKNOWN" até a extensão informar). */
+  tier: string;
 }
 
 export interface RotationStateRow {

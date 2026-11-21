@@ -29,7 +29,7 @@ function stageDescription(job: JobDetailDTO): string {
   if (job.status === 'failed' && job.error) return job.error;
   if (job.kind === 'transcription') {
     return job.status === 'completed'
-      ? 'Áudio transcrito com tempos por palavra. Revise a copy antes de criar a prévia.'
+      ? 'Áudio transcrito pelo Google Flow com tempos por palavra. Revise a copy antes de criar a prévia.'
       : 'Transcrevendo o áudio e separando as falas em cenas…';
   }
   if (job.status === 'cancelled') return 'Trabalho cancelado. Os itens já gerados foram mantidos.';
@@ -133,9 +133,10 @@ export function JobDetail({ initialJob }: { initialJob: JobDetailDTO }) {
             </div>
             <ProgressBar percent={progressPercent(job)} label={`${phaseLabel(job)}: ${progressLabel(job)}`} />
             <p className="text-sm leading-6 text-muted-foreground">{stageDescription(job)}</p>
-            <p className="text-sm text-muted-foreground">
-              Tempo decorrido <span className="ml-1 font-semibold text-foreground">{formatElapsed(job.elapsedSec)}</span>
-            </p>
+            <ul className="flex items-baseline gap-1 text-sm text-muted-foreground">
+              <li>Tempo decorrido</li>
+              <li className="font-semibold text-foreground">{formatElapsed(job.elapsedSec)}</li>
+            </ul>
           </div>
         </section>
 
@@ -157,7 +158,7 @@ export function JobDetail({ initialJob }: { initialJob: JobDetailDTO }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {active && !isTranscription && (
+          {active && (
             <Button variant="outline" className="text-destructive" onClick={() => act('cancel')} loading={busy === 'cancel'}>
               <Ban /> Cancelar
             </Button>
@@ -167,7 +168,7 @@ export function JobDetail({ initialJob }: { initialJob: JobDetailDTO }) {
               <RotateCcw /> Reexecutar falhas
             </Button>
           )}
-          {!active && (
+          {(!active || isTranscription) && (
             <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
               <Trash2 /> {isTranscription ? 'Excluir transcrição' : 'Excluir trabalho'}
             </Button>
@@ -297,14 +298,14 @@ function ConfigCard({ job }: { job: JobDetailDTO }) {
   return (
     <Card className="p-5">
       <h2 className="mb-4 text-base font-semibold">Configuração</h2>
-      <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
         {rows.map(([k, v]) => (
-          <div key={k}>
-            <dt className="text-sm text-muted-foreground">{k}</dt>
-            <dd className="mt-0.5 break-words text-sm font-semibold">{v}</dd>
-          </div>
+          <ul key={k}>
+            <li className="text-sm text-muted-foreground">{k}</li>
+            <li className="mt-0.5 break-words text-sm font-semibold">{v}</li>
+          </ul>
         ))}
-      </dl>
+      </div>
       <div className="mt-5">
         <p className="mb-2 text-sm font-semibold">Copy</p>
         <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-inset p-4 text-sm leading-6 text-muted-foreground">{job.copyText.trim() || '—'}</p>

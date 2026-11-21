@@ -127,7 +127,8 @@ function ChromeConnector({ ext, onChange, onError }: { ext: ExtensionOverviewDTO
   const [browserName, setBrowserName] = useState('Chrome deste dispositivo');
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [lastTest, setLastTest] = useState<string | null>(null);
+  /** Resultado do último teste: `ms` = ida e volta confirmada; `message` = motivo de não ter validado. */
+  const [lastTest, setLastTest] = useState<{ ms: number } | { message: string } | null>(null);
   const connected = ext.onlineCount > 0;
 
   const createCode = async () => {
@@ -151,23 +152,30 @@ function ChromeConnector({ ext, onChange, onError }: { ext: ExtensionOverviewDTO
     }
   };
 
-  /** Valida o enlace com a extensão sem gerar nada: confere o último sinal dos navegadores pareados. */
+  /**
+   * Valida o enlace sem gerar nada. O "eco" é a ida e volta ao estúdio (consulta do estado da ponte): mede o
+   * tempo real da chamada; não dispara nenhuma operação de geração.
+   */
   const testConnection = async () => {
     setTesting(true);
     onError(null);
     try {
+      const started = performance.now();
       const fresh = await apiFetch<ExtensionOverviewDTO>('/api/extension/browsers');
+      const ms = Math.max(1, Math.round(performance.now() - started));
       onChange(fresh);
-      const latest = fresh.browsers.filter((b) => b.online).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
-      if (!latest) {
-        setLastTest('Nenhum Chrome online. Abra o Chrome com a extensão pareada e tente de novo.');
+      if (fresh.onlineCount === 0) {
+        setLastTest({ message: 'Nenhum Chrome online. Abra o Chrome com a extensão pareada e tente de novo.' });
         toast('Nenhum Chrome online no momento.');
         return;
       }
-      const age = Math.max(0, Math.round((Date.now() - new Date(latest.lastSeenAt).getTime()) / 1000));
-      const flow = latest.flowSessionActive ? 'sessão do Flow ativa' : 'sem sessão do Flow aberta';
-      setLastTest(`Último teste: "${latest.name}" respondeu há ${age} s (${flow}); nenhuma operação de geração foi chamada.`);
-      toast('Conexão validada. Nenhuma geração ou crédito foi usado.');
+      if (!fresh.flowSessionActive) {
+        setLastTest({ message: 'A sessão do Google Flow não está ativa. Abra o Flow em um Chrome pareado e tente de novo.' });
+        toast('A sessão do Google Flow não está ativa.');
+        return;
+      }
+      setLastTest({ ms });
+      toast(`Ponte Flow validada em ${ms} ms. Nenhuma geração ou crédito foi usado.`);
     } catch (e) {
       onError(errorMessage(e));
     } finally {
@@ -215,8 +223,12 @@ function ChromeConnector({ ext, onChange, onError }: { ext: ExtensionOverviewDTO
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold">Conexão com Google Flow</p>
-                <p className="text-xs text-muted-foreground">
-                  {connected ? 'Extensão online. O teste não inicia geração nem consome crédito.' : 'Pareie um Chrome para poder testar a conexão.'}
+                <p role="status" className="text-xs text-muted-foreground">
+                  {lastTest && 'ms' in lastTest
+                    ? `Ponte validada por eco em ${lastTest.ms} ms. Nenhuma geração foi iniciada nem crédito consumido.`
+                    : connected
+                      ? 'Extensão online. O teste não inicia geração nem consome crédito.'
+                      : 'Pareie um Chrome para poder testar a conexão.'}
                 </p>
               </div>
               <Button variant="secondary" loading={testing} onClick={testConnection}>
@@ -226,7 +238,11 @@ function ChromeConnector({ ext, onChange, onError }: { ext: ExtensionOverviewDTO
             <p className="text-xs leading-5 text-muted-foreground">
               Para iniciar a Executora, abra a conta desejada em <strong className="text-foreground">Contas do Google Flow</strong> pelo botão “Abrir Flow”. Abrir o link compartilhado diretamente não vincula a aba à conta pareada e a ponte não será estabelecida. Quando o status indicar Flow ativo, use “Testar conexão sem gerar”; o teste não consome crédito.
             </p>
-            {lastTest && <p role="status" className="text-xs text-muted-foreground">{lastTest}</p>}
+            {lastTest && (
+              <p role="status" className="text-xs text-muted-foreground">
+                {'ms' in lastTest ? `Último teste: ida e volta confirmada em ${lastTest.ms} ms; nenhuma operação de geração foi chamada.` : lastTest.message}
+              </p>
+            )}
           </div>
 
           <div className="grid gap-8 md:grid-cols-2">
@@ -335,7 +351,7 @@ function FlowAccounts({ acc, ext, onChange, onRefresh, onError }: { acc: Account
           <h2 className="text-base font-semibold">Contas do Google Flow</h2>
           <p className="mt-1 text-sm text-muted-foreground">Veja saldo e disponibilidade, abra uma sessão ou pause uma conta. A ordem define qual conta será usada primeiro.</p>
         </div>
-        <Button variant="ghost" onClick={onRefresh}>
+        <Button variant="ghost" aria-label="Atualizar contas Flow" onClick={onRefresh}>
           <RefreshCw /> Atualizar
         </Button>
       </div>
@@ -382,7 +398,9 @@ function AccountRow({ account: a, isFirst, isLast, browsers, onPatch, onRemove }
             <p className="text-sm font-bold">{a.name}</p>
             <Pill tone={state.tone}>{state.label}</Pill>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{a.email}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {a.email} · {a.tier}
+          </p>
         </div>
 
         <ul aria-label={`Créditos de ${a.name}`} className="grid grid-cols-3 rounded-lg bg-card px-3 py-3">
@@ -401,7 +419,7 @@ function AccountRow({ account: a, isFirst, isLast, browsers, onPatch, onRemove }
         </ul>
 
         <p className="text-xs leading-5 text-muted-foreground">
-          Saldo informado em <DateText iso={a.creditsUpdatedAt} seconds /> · 0 créditos de gasto estimado · 0 vídeos em andamento · 0 imagens em andamento · ciclo: {a.cycleVideos}/{ROTATION_RULES.maxVideosPerCycle} vídeos, {a.cycleImages}/{ROTATION_RULES.maxImagesPerCycle} imagens
+          Saldo lido <DateText iso={a.creditsUpdatedAt} seconds /> · 0 créditos de gasto estimado · 0 vídeos em andamento · 0 imagens em andamento
         </p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {a.sessionActive ? <Pill tone="success">Sessão Flow ativa</Pill> : <Pill>Sem sessão do Flow</Pill>}

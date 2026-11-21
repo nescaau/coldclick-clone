@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { formatBinaryBytes, jobStatusLabel, overallPercent, phaseLabel, progressLabel, progressPercent } from './format';
-import { createJobSchema } from './schemas';
+import { createJobSchema, uploadQuerySchema } from './schemas';
+import { transcriptionPercent, TRANSCRIPTION_STEP_LABELS as L } from './transcription-steps';
 
 const valid = {
   videoId: 'v1',
@@ -41,8 +42,55 @@ describe('createJobSchema', () => {
   });
 });
 
+describe('createJobSchema — cenas (validação no servidor)', () => {
+  const scene = (index: number, start: number, end: number, text = 'fala') => ({ index, start, end, text });
+
+  it('aceita cenas sequenciais com até 8 s e dispensa o copyText (derivado no serviço)', () => {
+    const r = createJobSchema.parse({ ...valid, copyText: undefined, scenes: [scene(1, 0, 5), scene(2, 5.5, 8.5)] });
+    expect(r.scenes).toHaveLength(2);
+    expect(r.copyText).toBe('');
+  });
+
+  it('recusa cena com fim antes do início', () => {
+    expect(() => createJobSchema.parse({ ...valid, scenes: [scene(1, 5, 2)] })).toThrow(/antes do início/);
+  });
+
+  it('recusa cena com mais de 8 s', () => {
+    expect(() => createJobSchema.parse({ ...valid, scenes: [scene(1, 0, 8.5)] })).toThrow(/8 segundos/);
+    expect(createJobSchema.parse({ ...valid, scenes: [scene(1, 0, 8)] }).scenes).toHaveLength(1);
+  });
+
+  it('recusa índices fora de sequência ou repetidos', () => {
+    expect(() => createJobSchema.parse({ ...valid, scenes: [scene(1, 0, 2), scene(1, 2, 4)] })).toThrow(/sequenciais/);
+    expect(() => createJobSchema.parse({ ...valid, scenes: [scene(2, 0, 2)] })).toThrow(/sequenciais/);
+  });
+
+  it('sem cenas e sem copy manual → erro; com cenas a copy manual é ignorada', () => {
+    expect(() => createJobSchema.parse({ ...valid, copyText: '', scenes: [] })).toThrow(/copy/i);
+    expect(createJobSchema.parse({ ...valid, copyText: 'qualquer coisa', scenes: [scene(1, 0, 2, 'A')] }).scenes[0].text).toBe('A');
+  });
+
+  it('o limite de 12.000 caracteres vale para a copy derivada das cenas', () => {
+    const big = 'a'.repeat(6_100);
+    expect(() => createJobSchema.parse({ ...valid, scenes: [scene(1, 0, 3, big), scene(2, 3, 6, big)] })).toThrow(/12\.?000/);
+  });
+});
+
+describe('uploadQuerySchema', () => {
+  it('usa padrões e ignora duração inválida em vez de quebrar', () => {
+    expect(uploadQuerySchema.parse({})).toEqual({ name: 'video.mp4', duration: undefined });
+    expect(uploadQuerySchema.parse({ name: 'a.mp4', duration: 'abc' }).duration).toBeUndefined();
+    expect(uploadQuerySchema.parse({ name: 'a.mp4', duration: '12.5' }).duration).toBe(12.5);
+    expect(uploadQuerySchema.parse({ name: 'a.mp4', duration: '-3' }).duration).toBeUndefined();
+  });
+  it('recusa nome vazio ou gigante', () => {
+    expect(() => uploadQuerySchema.parse({ name: '   ' })).toThrow();
+    expect(() => uploadQuerySchema.parse({ name: 'x'.repeat(201) })).toThrow();
+  });
+});
+
 describe('formatação de progresso (textos da referência)', () => {
-  const base = { kind: 'generation' as const, stepsDone: 0, stepsTotal: 0, variations: 20, videosDone: 20, failedAttempts: 3, imagesDone: 20, imagesFailed: 0, videosFailed: 0 };
+  const base = { kind: 'generation' as const, stepsDone: 0, stepsTotal: 0, stepsPercent: 0, variations: 20, videosDone: 20, failedAttempts: 3, imagesDone: 20, imagesFailed: 0, videosFailed: 0 };
 
   it('formata "20 de 20 vídeos concluídos · 3 falhas"', () => {
     const job = { ...base, status: 'partial' as const, phase: 'done' as const };
@@ -59,15 +107,23 @@ describe('formatação de progresso (textos da referência)', () => {
   });
 
   it('trabalhos de transcrição usam o vocabulário da prévia', () => {
-    const t = { ...base, kind: 'transcription' as const, stepsTotal: 5, stepsDone: 5, variations: 0, phase: 'done' as const };
+    const t = { ...base, kind: 'transcription' as const, stepsTotal: 5, stepsDone: 5, stepsPercent: 100, variations: 0, phase: 'done' as const };
     const done = { ...t, status: 'completed' as const };
     expect(jobStatusLabel(done)).toBe('Prévia pronta');
     expect(phaseLabel(done)).toBe('Prévia concluída');
     expect(progressLabel(done)).toBe('Concluído · 100%');
-    const failed = { ...t, status: 'failed' as const, stepsDone: 2 };
+    // Falha depois do envio do áudio = solicitada + preparado + enviado = 35% (valor observado na referência).
+    const failed = { ...t, status: 'failed' as const, stepsDone: 3, stepsPercent: transcriptionPercent([L.requested, L.audioPrepared, L.sent]) };
     expect(jobStatusLabel(failed)).toBe('Falhou');
-    expect(progressLabel(failed)).toBe('Falhou · 40%');
-    expect(progressPercent(failed)).toBe(40);
+    expect(progressLabel(failed)).toBe('Falhou · 35%');
+    expect(progressPercent(failed)).toBe(35);
+  });
+
+  it('o percentual da transcrição soma pesos, ignora etapas desconhecidas/repetidas e nunca passa de 100', () => {
+    expect(transcriptionPercent([])).toBe(0);
+    expect(transcriptionPercent([L.requested])).toBe(5);
+    expect(transcriptionPercent([L.requested, L.requested, 'etapa inventada'])).toBe(5);
+    expect(transcriptionPercent(Object.values(L))).toBe(100);
   });
 
   it('usa unidades binárias em pt-BR', () => {

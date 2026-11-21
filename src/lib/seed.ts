@@ -6,6 +6,23 @@
  */
 
 export const SEED_FLAG = 'seeded_avatars_v1';
+export const GLOBAL_SEED_FLAG = 'seeded_global_avatars_v1';
+
+/**
+ * Avatares da biblioteca global (somente texto, sem fotos). Textos copiados da referência; a voz aparece
+ * truncada no snapshot ("…Natural imp..."), então guardamos só até o fim da última frase completa.
+ */
+export const GLOBAL_AVATARS: Array<{ name: string; description: string; voice: string; gender: 'female' | 'male'; age: number }> = [
+  {
+    name: 'Dawn',
+    description:
+      'Native American woman in her early 50s, long straight black hair with silver strands in a single braid, high cheekbones, warm brown skin, plain denim shirt, small turquoise earrings',
+    voice:
+      'Sounds like a real calm woman sharing family wisdom in a voice note. Native American woman in her early 50s from New Mexico, steady, warm, medium-low pitch, unhurried.',
+    gender: 'female',
+    age: 53,
+  },
+];
 
 export interface SeedAvatar {
   name: string;

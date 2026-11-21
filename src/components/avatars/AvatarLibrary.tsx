@@ -11,7 +11,7 @@ import { Alert, Button, Card, cn, ConfirmDialog, EmptyState, LinkButton, Pill } 
 import { AvatarFormModal } from './AvatarFormModal';
 
 const PAGE_SIZE = 6;
-/** Todos os avatares desta réplica são pessoais e disponíveis; "Globais" e "Inativos" existem só na plataforma original. */
+/** "Inativos": a réplica não tem avatares desativados, então a aba fica sempre vazia. */
 const TABS = [
   { id: 'all', label: 'Todos' },
   { id: 'personal', label: 'Pessoais' },
@@ -33,9 +33,9 @@ export function AvatarLibrary({ avatars }: { avatars: AvatarDTO[] }) {
   const [page, setPage] = useState(0);
 
   const filtered = useMemo(() => {
-    if (tab === 'global' || tab === 'inactive') return [];
+    if (tab === 'inactive') return [];
     const q = applied.trim().toLowerCase();
-    return avatars.filter((a) => !q || a.name.toLowerCase().includes(q));
+    return avatars.filter((a) => (tab === 'all' || (tab === 'personal' ? a.scope === 'personal' : a.scope === 'global')) && (!q || a.name.toLowerCase().includes(q)));
   }, [avatars, tab, applied]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -237,7 +237,7 @@ function AvatarCard({ avatar, onEdit, onRemove }: { avatar: AvatarDTO; onEdit: (
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3 pt-10">
-          <span className="rounded-full bg-black/70 px-2.5 py-0.5 text-xs font-semibold text-white">Pessoal</span>
+          <span className="rounded-full bg-black/70 px-2.5 py-0.5 text-xs font-semibold text-white">{avatar.scope === 'global' ? 'Global' : 'Pessoal'}</span>
           <span className="rounded-full bg-black/55 px-2.5 py-0.5 text-xs font-semibold text-success">Disponível</span>
         </div>
       </div>

@@ -41,6 +41,10 @@ export interface AvatarDTO {
   description: string;
   /** Descrição da voz do personagem, em inglês (exibida na escolha de avatares). */
   voice: string;
+  /** 'global' = biblioteca compartilhada da plataforma (sem fotos); 'personal' = do usuário. */
+  scope: 'personal' | 'global';
+  gender: 'female' | 'male' | null;
+  age: number | null;
   photos: AvatarPhotoDTO[];
   createdAt: string;
   updatedAt: string;
@@ -88,6 +92,8 @@ export interface JobDTO {
   /** Etapas registradas concluídas / total esperado (transcrição: 5). */
   stepsDone: number;
   stepsTotal: number;
+  /** Percentual ponderado da transcrição (0–100); 0 nos demais tipos. */
+  stepsPercent: number;
   error: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -152,6 +158,8 @@ export interface GoogleAccountDTO {
   totalImages: number;
   lastUsedAt: string | null;
   creditsUpdatedAt: string | null;
+  /** Plano da conta no Flow (ex.: "UNKNOWN" enquanto a extensão não informar). */
+  tier: string;
   availability: AccountAvailability;
   /** Há um Chrome online com a aba do Flow logada nesta conta. */
   sessionActive: boolean;

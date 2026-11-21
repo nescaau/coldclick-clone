@@ -2,9 +2,11 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { MAX_VIDEO_BYTES, STORAGE_QUOTA_BYTES, VIDEO_TYPES } from '../config';
+import { transaction } from '../db';
 import { fileUrl } from '../format';
 import { AppError as HttpError } from '../errors';
-import { assertPublicHttpUrl } from '../net-guard';
+import { safeFetch } from '../net-guard';
+import { deleteJobRow, listTranscriptionJobIdsForVideo } from '../repo/jobs';
 import {
   countJobsUsingVideo,
   deleteVideoRow,
@@ -16,6 +18,7 @@ import {
 import { deleteFile, getStorageUsage, PayloadTooLargeError, safeBaseName, saveWebStream } from '../storage';
 import type { Scene } from '../scenes';
 import type { VideoDTO } from '../types';
+import { cancelTranscription } from './transcription-service';
 
 const toDTO = (r: VideoRow): VideoDTO => ({
   id: r.id,
@@ -113,44 +116,41 @@ const EXT_BY_MIME: Record<string, string> = {
   'video/webm': '.webm',
 };
 
+/** decodeURIComponent que não explode com `%` malformado (URL inválida → usa o texto como veio). */
+function safeDecode(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /** Baixa um vídeo de um link direto (http/https público) e o registra. */
 export async function importVideoFromUrl(rawUrl: string): Promise<VideoDTO> {
-  let current: URL;
-  try {
-    current = await assertPublicHttpUrl(rawUrl);
-  } catch (e) {
-    throw new HttpError(400, e instanceof Error ? e.message : 'URL inválida');
+  // safeFetch valida cada salto (inclusive redirecionamentos), FIXA o IP validado na conexão (sem DNS rebinding)
+  // e descarta o corpo das respostas 3xx.
+  const res = await safeFetch(rawUrl);
+  const ok = res.status >= 200 && res.status < 300;
+  if (!ok) {
+    void res.body.cancel().catch(() => undefined);
+    throw new HttpError(502, `O link respondeu ${res.status || 'sem resposta'}`);
   }
-  const origin = current.toString();
-
-  // Redirecionamentos são seguidos manualmente (até 5) para revalidar cada destino contra redes internas.
-  let res: Response | null = null;
-  for (let hop = 0; hop < 5; hop++) {
-    res = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(10 * 60_000) }).catch(() => null);
-    if (!res) throw new HttpError(502, 'Não foi possível baixar o arquivo deste link');
-    const location = res.headers.get('location');
-    if (res.status >= 300 && res.status < 400 && location) {
-      try {
-        current = await assertPublicHttpUrl(new URL(location, current).toString());
-      } catch (e) {
-        throw new HttpError(400, e instanceof Error ? e.message : 'Redirecionamento inválido');
-      }
-      continue;
-    }
-    break;
-  }
-  if (!res || !res.ok || !res.body) throw new HttpError(502, `O link respondeu ${res?.status ?? 'sem resposta'}`);
+  const current = res.url;
+  const origin = new URL(rawUrl).toString();
 
   // Extensão: pelo caminho da URL ou, se não houver, pelo Content-Type.
-  const mimeHeader = (res.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  let name = safeBaseName(decodeURIComponent(path.basename(current.pathname)) || 'video');
+  const mimeHeader = String(res.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  let name = safeBaseName(safeDecode(path.basename(current.pathname)) || 'video');
   if (!VIDEO_TYPES[path.extname(name).toLowerCase()]) {
     const ext = EXT_BY_MIME[mimeHeader];
-    if (!ext) throw new HttpError(415, 'O link não parece apontar para um vídeo MP4, MOV ou WebM.');
+    if (!ext) {
+      void res.body.cancel().catch(() => undefined);
+      throw new HttpError(415, 'O link não parece apontar para um vídeo MP4, MOV ou WebM.');
+    }
     name = `${path.basename(name, path.extname(name))}${ext}`;
   }
 
-  const declared = Number(res.headers.get('content-length'));
+  const declared = Number(res.headers['content-length']);
   return storeVideoStream({
     name,
     body: res.body,
@@ -165,10 +165,17 @@ export async function importVideoFromUrl(rawUrl: string): Promise<VideoDTO> {
 export function removeVideo(id: string): void {
   const row = findVideoRow(id);
   if (!row) throw new HttpError(404, 'Vídeo não encontrado');
-  const used = countJobsUsingVideo(id);
-  if (used > 0) {
-    throw new HttpError(409, `Este vídeo é usado por ${used} ${used === 1 ? 'trabalho' : 'trabalhos'} e não pode ser excluído.`);
-  }
-  deleteVideoRow(id);
+  // Só trabalhos de GERAÇÃO bloqueiam. Transcrições do vídeo (inclusive em andamento) são abortadas e apagadas com ele.
+  transaction(() => {
+    const used = countJobsUsingVideo(id);
+    if (used > 0) {
+      throw new HttpError(409, `Este vídeo é usado por ${used} ${used === 1 ? 'trabalho' : 'trabalhos'} e não pode ser excluído.`);
+    }
+    for (const jobId of listTranscriptionJobIdsForVideo(id)) {
+      cancelTranscription(jobId);
+      deleteJobRow(jobId);
+    }
+    deleteVideoRow(id);
+  });
   deleteFile(row.file_path);
 }

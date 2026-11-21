@@ -21,10 +21,10 @@ interface ReviewProps {
 
 function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className={cn(wide && 'sm:col-span-2')}>
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-sm font-semibold">{children}</dd>
-    </div>
+    <ul className={cn(wide && 'sm:col-span-2')}>
+      <li className="text-sm text-muted-foreground">{label}</li>
+      <li className="mt-1 break-words text-sm font-semibold">{children}</li>
+    </ul>
   );
 }
 
@@ -43,7 +43,7 @@ export function StepReview({ state, avatarNames, preparing, error, onPrepare }: 
         </p>
       </div>
 
-      <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
         <Field label="Vídeo de referência">{state.video?.name}</Field>
         <Field label="Produto">{state.product ?? 'Sem produto'}</Field>
         <Field label="Formato criativo">{labelOf(CREATIVE_FORMATS, state.creativeFormat)}</Field>
@@ -59,7 +59,7 @@ export function StepReview({ state, avatarNames, preparing, error, onPrepare }: 
         <Field label="Transcrição" wide>
           {copyLength(state).toLocaleString('pt-BR')} caracteres informados
         </Field>
-      </dl>
+      </div>
 
       {error && <Alert>{error}</Alert>}
 

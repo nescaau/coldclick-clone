@@ -28,6 +28,8 @@ interface Props {
   onNewAvatar: () => void;
 }
 
+const GENDER_LABEL: Record<string, string> = { female: 'Mulher', male: 'Homem' };
+
 const SOURCE_TABS = [
   { id: 'all', label: 'Todos' },
   { id: 'mine', label: 'Minha biblioteca' },
@@ -52,7 +54,7 @@ function Select({ id, label, value, onChange, children }: { id: string; label: s
 }
 
 /** Cartão selecionável de avatar (multi-seleção). */
-function AvatarCard({ selected, onToggle, image, tag, title, subtitle }: { selected: boolean; onToggle: () => void; image?: string; tag: string; title: string; subtitle: string }) {
+function AvatarCard({ selected, onToggle, image, tag, title, subtitle, noPhotoLabel }: { selected: boolean; onToggle: () => void; image?: string; tag: string; title: string; subtitle: string; noPhotoLabel?: string }) {
   return (
     <button
       type="button"
@@ -64,6 +66,9 @@ function AvatarCard({ selected, onToggle, image, tag, title, subtitle }: { selec
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={image} alt={title} className="h-full w-full object-cover" loading="lazy" />
+        ) : noPhotoLabel ? (
+          // Avatar global: sem foto, só o rótulo (sem ícone de pessoa).
+          <div className="grid h-full place-items-center text-sm font-medium text-muted-foreground">{noPhotoLabel}</div>
         ) : (
           <div className="grid h-full place-items-center text-muted-foreground">
             <User className="size-10" />
@@ -93,9 +98,8 @@ export function StepPersonalize({ state, avatars, onChange, onNewAvatar }: Props
   const [query, setQuery] = useState('');
 
   const visible = useMemo(() => {
-    if (tab === 'global') return []; // não há avatares globais nesta réplica
     const q = query.trim().toLowerCase();
-    return avatars.filter((a) => !q || a.name.toLowerCase().includes(q));
+    return avatars.filter((a) => (tab === 'all' || (tab === 'mine' ? a.scope === 'personal' : a.scope === 'global')) && (!q || a.name.toLowerCase().includes(q)));
   }, [avatars, tab, query]);
 
   const toggleAvatar = (id: string) =>
@@ -156,10 +160,18 @@ export function StepPersonalize({ state, avatars, onChange, onNewAvatar }: Props
         <div role="group" aria-label="Selecionar avatares do lote" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
           <AvatarCard selected={state.avatarIds.length === 0} onToggle={() => onChange({ avatarIds: [] })} tag="Quadro original" title="Manter pessoa original" subtitle="Sem troca de identidade" />
           {visible.map((a) => (
-            <AvatarCard key={a.id} selected={state.avatarIds.includes(a.id)} onToggle={() => toggleAvatar(a.id)} image={a.photos[0]?.url} tag="Minha biblioteca" title={a.name} subtitle={a.voice || a.description} />
+            <AvatarCard
+              key={a.id}
+              selected={state.avatarIds.includes(a.id)}
+              onToggle={() => toggleAvatar(a.id)}
+              image={a.photos[0]?.url}
+              tag={a.scope === 'global' ? 'Biblioteca global' : 'Minha biblioteca'}
+              noPhotoLabel={a.scope === 'global' && !a.photos[0] ? 'Sem foto' : undefined}
+              title={a.name}
+              subtitle={a.scope === 'global' ? [GENDER_LABEL[a.gender ?? ''], a.age ? `${a.age} anos` : '', a.voice || a.description].filter(Boolean).join(' · ') : a.voice || a.description}
+            />
           ))}
         </div>
-        {tab === 'global' && <p className="text-xs text-muted-foreground">Não há avatares globais disponíveis.</p>}
       </section>
 
       <section aria-label="Variações" className="space-y-5">

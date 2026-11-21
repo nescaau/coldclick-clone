@@ -29,10 +29,12 @@ import {
   getImageItemStatus,
   getOutcomeCounts,
   incrementFailedAttempts,
+  interruptPendingItems,
   listDueRunningItems,
   listPendingItems,
   markItemDone,
   markItemFailed,
+  markItemInterrupted,
   markItemPending,
   markJobRunning,
   startItemAttempt,
@@ -89,29 +91,24 @@ function resolveDueItems(now: number): void {
       incrementFailedAttempts(item.job_id);
       const canRetry = item.attempts < MAX_ATTEMPTS_PER_ITEM && item.generations_used < item.max_generations;
       if (canRetry) markItemPending(item.id);
-      else {
-        markItemFailed(
-          item.id,
-          item.attempts >= MAX_ATTEMPTS_PER_ITEM
-            ? `Falha simulada após ${item.attempts} tentativas`
-            : 'Teto de gerações do trabalho atingido',
-          'running',
-        );
-      }
+      else if (item.attempts >= MAX_ATTEMPTS_PER_ITEM) markItemFailed(item.id, `Falha simulada após ${item.attempts} tentativas`, 'running');
+      else markItemInterrupted(item.id, 'running'); // teto esgotado: interrupção, não falha do item
     });
   }
 }
 
 /** Trabalho a processar: o que já está em andamento ou, senão, o mais antigo da fila. */
 function activateJob(): ActiveJobRow | null {
-  const running = findRunningJob();
-  if (running) return running;
-  const queued = findOldestQueuedJob();
-  if (queued) {
-    markJobRunning(queued.id);
-    addJobEvent(queued.id, 'Geração iniciada');
-  }
-  return queued;
+  return transaction(() => {
+    const running = findRunningJob();
+    if (running) return running;
+    const queued = findOldestQueuedJob();
+    if (queued) {
+      markJobRunning(queued.id);
+      addJobEvent(queued.id, 'Geração iniciada');
+    }
+    return queued;
+  });
 }
 
 /** Inicia itens pendentes até preencher a concorrência, respeitando a dependência imagem → vídeo. */
@@ -124,8 +121,12 @@ function startItems(jobId: string, now: number): void {
 
     if (item.kind === 'video') {
       const image = getImageItemStatus(jobId, item.variation);
-      if (image === 'failed' || image === 'cancelled') {
+      if (image === 'failed') {
         markItemFailed(item.id, 'Imagem-base indisponível', 'pending');
+        continue;
+      }
+      if (image === 'cancelled') {
+        markItemInterrupted(item.id, 'pending'); // imagem-base interrompida pelo teto → o vídeo também
         continue;
       }
       if (image !== 'done') continue; // aguarda a imagem-base
@@ -133,8 +134,9 @@ function startItems(jobId: string, now: number): void {
 
     const budget = getGenerationBudget(jobId);
     if (budget.used >= budget.max) {
-      markItemFailed(item.id, 'Teto de gerações do trabalho atingido', 'pending');
-      continue;
+      // Créditos/cota esgotados: o lote é INTERROMPIDO (não vira uma pilha de falhas).
+      if (interruptPendingItems(jobId) > 0) addJobEvent(jobId, 'Geração interrompida: teto de gerações atingido', 'failed');
+      return;
     }
 
     startItemAttempt(item.id, jobId, Math.round(now + simulatedLatencyMs(item.kind)));
@@ -146,8 +148,13 @@ function startItems(jobId: string, now: number): void {
 function finalizeIfIdle(jobId: string): void {
   if (countOpenItems(jobId) > 0) return;
   const c = getOutcomeCounts(jobId);
-  const status = c.itemsDone === c.itemsTotal ? 'completed' : c.videosDone === 0 ? 'failed' : 'partial';
-  finishJob(jobId, status, status === 'failed' ? 'Nenhum vídeo pôde ser gerado' : null);
+  // Interrompido por cota/créditos → "parcial" mesmo com 0 vídeos e 0 falhas (estado visto na referência).
+  const status = c.itemsDone === c.itemsTotal ? 'completed' : c.interrupted > 0 || c.videosDone > 0 ? 'partial' : 'failed';
+  finishJob(
+    jobId,
+    status,
+    status === 'failed' ? 'Nenhum vídeo pôde ser gerado' : c.interrupted > 0 ? 'Geração interrompida: teto de gerações do trabalho atingido' : null,
+  );
   addJobEvent(
     jobId,
     status === 'completed' ? 'Geração concluída' : status === 'partial' ? 'Geração finalizada parcialmente' : 'Geração falhou',

@@ -75,6 +75,7 @@ type Progress = Pick<
   | 'videosFailed'
   | 'stepsDone'
   | 'stepsTotal'
+  | 'stepsPercent'
 >;
 
 /** Ex.: "20 de 20 vídeos concluídos · 3 falhas". */
@@ -97,8 +98,7 @@ export function overallPercent(
 }
 
 /** Percentual de etapas registradas de uma transcrição. */
-const stepsPercent = (job: Pick<JobDTO, 'stepsDone' | 'stepsTotal' | 'status'>): number =>
-  job.status === 'completed' ? 100 : job.stepsTotal ? Math.round((job.stepsDone / job.stepsTotal) * 100) : 0;
+const stepsPercent = (job: Pick<JobDTO, 'stepsPercent' | 'status'>): number => (job.status === 'completed' ? 100 : job.stepsPercent);
 
 /**
  * Rótulo da esquerda abaixo do título na lista de trabalhos:

@@ -58,7 +58,7 @@ export function StepScript({ state, products, transcriptionReady, onChange, onVi
     : hasScenes
       ? `${state.scenes.length} ${state.scenes.length === 1 ? 'cena pronta' : 'cenas prontas'} para revisar. Cada fala fica abaixo de 8 segundos e reserva o fim do clipe para o corte.`
       : transcriptionReady
-        ? 'Serviço de transcrição pronto. A transcrição só será enviada depois da sua confirmação.'
+        ? 'Conexão Flow pronta. A transcrição só será enviada depois da sua confirmação.'
         : 'Serviço de transcrição não configurado. Escreva a copy manualmente ou configure a chave em Configurações do estúdio.';
 
   return (
@@ -145,16 +145,16 @@ export function StepScript({ state, products, transcriptionReady, onChange, onVi
 
       <ConfirmDialog
         open={confirming}
-        title="Confirmar transcrição"
+        title="Confirmar transcrição no Google Flow"
         cancelLabel="Voltar"
-        confirmLabel="Enviar transcrição"
+        confirmLabel="Enviar transcrição ao Flow"
         onCancel={() => setConfirming(false)}
         onConfirm={transcribe}
       >
         <p>
-          O vídeo <strong>{video.name}</strong> será enviado para transcrição e divisão automática das falas em cenas. Esta ação envia uma chamada ao serviço de transcrição configurado e pode gerar custo.
+          O vídeo <strong>{video.name}</strong> será enviado para transcrição e divisão automática das falas em cenas. Esta ação envia uma chamada ao Google Flow e pode consumir créditos.
         </p>
-        <p>A solicitação só será enviada depois de confirmar. Se o resultado ficar incerto, confira o histórico do serviço antes de tentar novamente.</p>
+        <p>A solicitação só será enviada depois de confirmar. Se o resultado ficar incerto, confira o histórico no Flow antes de tentar novamente.</p>
       </ConfirmDialog>
     </div>
   );

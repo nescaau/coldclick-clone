@@ -12,6 +12,7 @@ import {
   scriptModeIds,
 } from './catalog';
 import { MAX_GEMINI_KEYS } from './config';
+import { CLIP_SEC, deriveCopyText } from './scenes';
 
 const axisChoiceSchema = z.object({
   mode: z.enum(['original', 'preset', 'describe']),
@@ -49,8 +50,11 @@ export const createJobSchema = z
     transcript: z.string().max(MAX_COPY_CHARS).default(''),
     transcriptSource: z.enum(['whisper', 'manual', 'none']).default('none'),
     scenes: z.array(sceneSchema).max(100).default([]),
-    /** Copy final (todas as cenas juntas, ou o texto escrito à mão). */
-    copyText: z.string().trim().min(1, 'Informe a copy do vídeo').max(MAX_COPY_CHARS, `A copy pode ter no máximo ${MAX_COPY_CHARS} caracteres`),
+    /**
+     * Copy escrita à mão. Quando há cenas, a copy é DERIVADA delas no servidor (`deriveCopyText`): o valor
+     * enviado pelo cliente é ignorado, então os dois nunca divergem.
+     */
+    copyText: z.string().trim().max(MAX_COPY_CHARS, `A copy pode ter no máximo ${MAX_COPY_CHARS} caracteres`).default(''),
     model: z.enum(modelIds),
     resolution: z.enum(resolutionIds),
   })
@@ -66,8 +70,34 @@ export const createJobSchema = z
     if (new Set(v.avatarIds).size !== v.avatarIds.length) {
       ctx.addIssue({ code: 'custom', path: ['avatarIds'], message: 'Avatares repetidos.' });
     }
+
+    // Cenas: índices 1..N em sequência, tempos coerentes e cada clipe com no máximo CLIP_SEC.
+    v.scenes.forEach((scene, i) => {
+      const at = (field: string) => ['scenes', i, field];
+      if (scene.index !== i + 1) {
+        ctx.addIssue({ code: 'custom', path: at('index'), message: `Os índices das cenas devem ser sequenciais (esperado ${i + 1}).` });
+      }
+      if (scene.end < scene.start) {
+        ctx.addIssue({ code: 'custom', path: at('end'), message: 'O fim da cena não pode ser antes do início.' });
+      } else if (scene.end - scene.start > CLIP_SEC) {
+        ctx.addIssue({ code: 'custom', path: at('end'), message: `Cada cena pode ter no máximo ${CLIP_SEC} segundos.` });
+      }
+    });
+
+    const copy = deriveCopyText(v.scenes, v.copyText);
+    if (!copy.trim()) {
+      ctx.addIssue({ code: 'custom', path: ['copyText'], message: 'Informe a copy do vídeo' });
+    } else if (copy.length > MAX_COPY_CHARS) {
+      ctx.addIssue({ code: 'custom', path: ['copyText'], message: `A copy pode ter no máximo ${MAX_COPY_CHARS} caracteres` });
+    }
   });
 export type CreateJobInput = z.infer<typeof createJobSchema>;
+
+/** Query do upload de vídeo (`?name=…&duration=…`): o nome é saneado depois; a duração é opcional. */
+export const uploadQuerySchema = z.object({
+  name: z.string().trim().min(1).max(200).default('video.mp4'),
+  duration: z.coerce.number().positive().max(24 * 3600).optional().catch(undefined),
+});
 
 export const transcribeSchema = z.object({ videoId: z.string().min(1, 'Selecione um vídeo') });
 export const importVideoSchema = z.object({ url: z.string().trim().url('Informe uma URL válida') });

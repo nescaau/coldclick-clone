@@ -23,7 +23,7 @@ Extensão Manifest V3 que fará a ponte entre o Estúdio Criativo local e o Goog
 
 - `POST /api/extension/pair` `{ code, deviceName?, version? }` → `{ token, rules }` (o código é de uso único; o nome do navegador vem do código).
 - `POST /api/extension/heartbeat` (`Authorization: Bearer <token>`) corpo opcional
-  `{ version, flowSessionActive, flowAccountEmail }` → `{ ok, serverTime, rules, tasks: [] }`. `401` = pareamento revogado.
+  `{ version, flowSessionActive, flowAccountEmail }` (campos ausentes **não** zeram o estado do Flow: o último relato vale por 5 min) → `{ ok, serverTime, rules, tasks: [] }`. `401` = pareamento revogado.
 
 Na fase 3, `tasks` passa a carregar as gerações pendentes; novos endpoints recebem os arquivos gerados e o saldo de créditos.
 O plano detalhado está no topo de `content.js`.

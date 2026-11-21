@@ -57,7 +57,7 @@ export function StepVideo({ videos, selected, onVideosChange, onSelect, onUpload
         <p id="source-label" className="mb-2 text-sm font-semibold">
           Vídeo de referência
         </p>
-        <div role="group" aria-labelledby="source-label" className="grid gap-2 sm:grid-cols-3">
+        <div role="group" aria-label="Origem do vídeo" className="grid gap-2 sm:grid-cols-3">
           {sources.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

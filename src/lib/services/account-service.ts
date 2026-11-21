@@ -61,6 +61,7 @@ function toDTO(r: AccountRow, priority: number, sessionEmails: Set<string>): Goo
     totalImages: r.total_images,
     lastUsedAt: r.last_used_at,
     creditsUpdatedAt: r.credits_updated_at,
+    tier: r.tier,
     availability: accountAvailability(toRotation(r)),
     sessionActive: sessionEmails.has(r.email),
   };

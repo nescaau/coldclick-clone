@@ -4,6 +4,7 @@ import { getDb, nowIso } from '../db';
 export interface GeminiKeyRow {
   id: string;
   api_key: string; // segredo criptografado (ver lib/crypto.ts)
+  key_hash: string | null; // HMAC do segredo (detecta duplicata sem decifrar)
   key_last4: string;
   position: number;
   uses: number;
@@ -20,12 +21,16 @@ export const countGeminiKeys = (): number =>
 export const findGeminiKeyRow = (id: string): GeminiKeyRow | null =>
   (getDb().prepare('SELECT * FROM gemini_keys WHERE id = ?').get(id) as GeminiKeyRow | undefined) ?? null;
 
-export function insertGeminiKeyRow(k: { id: string; encryptedKey: string; last4: string }): void {
+export const listGeminiKeyHashes = (): Set<string> =>
+  new Set((getDb().prepare('SELECT key_hash FROM gemini_keys WHERE key_hash IS NOT NULL').all() as { key_hash: string }[]).map((r) => r.key_hash));
+
+export function insertGeminiKeyRow(k: { id: string; encryptedKey: string; hash: string; last4: string }): void {
   const db = getDb();
   const next = (db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS n FROM gemini_keys').get() as { n: number }).n;
-  db.prepare('INSERT INTO gemini_keys (id, api_key, key_last4, position) VALUES (?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO gemini_keys (id, api_key, key_hash, key_last4, position) VALUES (?, ?, ?, ?, ?)').run(
     k.id,
     k.encryptedKey,
+    k.hash,
     k.last4,
     next,
   );
@@ -49,6 +54,10 @@ export function recordGeminiKeyError(id: string, message: string): void {
 }
 
 /** Troca o segredo armazenado (usado na migração de chaves legadas em texto puro). */
-export function replaceGeminiKeySecret(id: string, encryptedKey: string, last4: string): void {
-  getDb().prepare('UPDATE gemini_keys SET api_key = ?, key_last4 = ? WHERE id = ?').run(encryptedKey, last4, id);
+export function replaceGeminiKeySecret(id: string, encryptedKey: string, hash: string, last4: string): void {
+  getDb().prepare('UPDATE gemini_keys SET api_key = ?, key_hash = ?, key_last4 = ? WHERE id = ?').run(encryptedKey, hash, last4, id);
 }
+
+export const setGeminiKeyHash = (id: string, hash: string): void => {
+  getDb().prepare('UPDATE gemini_keys SET key_hash = ? WHERE id = ?').run(hash, id);
+};

@@ -28,6 +28,8 @@ import type { BrowserDTO, ExtensionOverviewDTO, PairingCodeDTO } from '../types'
 
 const CODE_TTL_MS = 10 * 60_000;
 const ONLINE_WINDOW_MS = 120_000;
+/** Por quanto tempo o último estado do Flow informado vale se heartbeats seguintes não o trouxerem. */
+export const FLOW_STATE_TTL_MS = 5 * 60_000;
 const MAX_FAILED_PAIRINGS = 10;
 const FAILED_WINDOW_MS = 10 * 60_000;
 // Sem 0/O/1/I/L para evitar confusão ao digitar.
@@ -61,13 +63,17 @@ function assertNotRateLimited(): void {
   }
 }
 
+/** O estado do Flow só vale enquanto o último relato for recente (e o navegador estiver online). */
+const flowStateFresh = (r: BrowserRow): boolean =>
+  r.flow_reported_at !== null && Date.now() - new Date(r.flow_reported_at).getTime() < FLOW_STATE_TTL_MS;
+
 const toBrowserDTO = (r: BrowserRow): BrowserDTO => ({
   id: r.id,
   name: r.name,
   version: r.version,
   online: Date.now() - new Date(r.last_seen_at).getTime() < ONLINE_WINDOW_MS,
-  flowSessionActive: r.flow_session_active === 1,
-  flowAccountEmail: r.flow_account_email,
+  flowSessionActive: r.flow_session_active === 1 && flowStateFresh(r),
+  flowAccountEmail: flowStateFresh(r) ? r.flow_account_email : null,
   pairedAt: r.paired_at,
   lastSeenAt: r.last_seen_at,
 });
@@ -114,7 +120,7 @@ export function completePairing(input: { code: string; version?: string }): { to
     const id = randomBytes(16).toString('hex');
     insertBrowserRow({ id, name: row.browser_name, tokenHash: sha256(token) });
     deletePairingCodes(); // uso único
-    if (input.version) recordHeartbeat(id, { version: input.version, flowSessionActive: false, flowAccountEmail: null });
+    if (input.version) recordHeartbeat(id, { version: input.version });
     return { token };
   });
 }
@@ -130,10 +136,13 @@ export function registerHeartbeat(
   browser: BrowserRow,
   info: { version?: string; flowSessionActive?: boolean; flowAccountEmail?: string | null },
 ): void {
+  const reportsFlow = info.flowSessionActive !== undefined || info.flowAccountEmail !== undefined;
   recordHeartbeat(browser.id, {
     version: info.version ?? browser.version,
-    flowSessionActive: info.flowSessionActive ?? false,
-    flowAccountEmail: info.flowAccountEmail?.toLowerCase() ?? null,
+    // Heartbeat sem o campo NÃO zera o estado: mantém o último relato válido (expira por TTL).
+    flow: reportsFlow
+      ? { sessionActive: info.flowSessionActive ?? browser.flow_session_active === 1, accountEmail: info.flowAccountEmail?.toLowerCase() ?? browser.flow_account_email }
+      : undefined,
   });
 }
 

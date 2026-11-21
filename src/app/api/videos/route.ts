@@ -1,4 +1,5 @@
 import { api, json } from '@/lib/http';
+import { uploadQuerySchema } from '@/lib/schemas';
 import { listVideos, uploadVideo } from '@/lib/services/video-service';
 
 export const GET = api(async () => json(listVideos()));
@@ -13,12 +14,15 @@ export const GET = api(async () => json(listVideos()));
 export const POST = api(async (req) => {
   if (!req.body) return json({ error: 'Nenhum arquivo enviado' }, 400);
   const length = Number(req.headers.get('content-length'));
-  const duration = Number(req.nextUrl.searchParams.get('duration'));
+  const query = uploadQuerySchema.parse({
+    name: req.nextUrl.searchParams.get('name') ?? undefined,
+    duration: req.nextUrl.searchParams.get('duration') ?? undefined,
+  });
   const video = await uploadVideo({
-    name: req.nextUrl.searchParams.get('name') ?? 'video.mp4',
+    name: query.name,
     body: req.body,
     contentLength: Number.isFinite(length) && length > 0 ? length : null,
-    durationSec: Number.isFinite(duration) && duration > 0 ? duration : null,
+    durationSec: query.duration ?? null,
   });
   return json(video, 201);
 });

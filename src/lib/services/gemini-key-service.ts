@@ -4,17 +4,19 @@
  */
 import { randomUUID } from 'node:crypto';
 import { transaction } from '../db';
-import { decryptSecret, encryptSecret, isEncrypted } from '../crypto';
+import { decryptSecret, encryptSecret, isEncrypted, secretFingerprint } from '../crypto';
 import { MAX_GEMINI_KEYS } from '../config';
 import { AppError, notFound } from '../errors';
 import {
   deleteGeminiKeyRow,
   findGeminiKeyRow,
   insertGeminiKeyRow,
+  listGeminiKeyHashes,
   listGeminiKeyRows,
   recordGeminiKeyError,
   recordGeminiKeyUse,
   replaceGeminiKeySecret,
+  setGeminiKeyHash,
   swapGeminiKeyPositions,
   type GeminiKeyRow,
 } from '../repo/gemini-keys';
@@ -49,13 +51,14 @@ export function parseKeyLines(text: string): string[] {
 export function addGeminiKeys(text: string): { added: number; skipped: number } {
   const incoming = parseKeyLines(text);
   return transaction(() => {
-    const existing = new Set(listGeminiKeyRows().map((r) => decryptSecret(r.api_key)));
-    const fresh = incoming.filter((k) => !existing.has(k));
-    if (existing.size + fresh.length > MAX_GEMINI_KEYS) {
-      throw new AppError(400, `Você pode cadastrar até ${MAX_GEMINI_KEYS} chaves (já há ${existing.size}).`);
+    const existing = listGeminiKeyHashes(); // comparação por HMAC: nada é decifrado
+    const fresh = incoming.filter((k) => !existing.has(secretFingerprint(k, 'gemini-key')));
+    const total = listGeminiKeyRows().length;
+    if (total + fresh.length > MAX_GEMINI_KEYS) {
+      throw new AppError(400, `Você pode cadastrar até ${MAX_GEMINI_KEYS} chaves (já há ${total}).`);
     }
     for (const key of fresh) {
-      insertGeminiKeyRow({ id: randomUUID(), encryptedKey: encryptSecret(key), last4: key.slice(-4) });
+      insertGeminiKeyRow({ id: randomUUID(), encryptedKey: encryptSecret(key), hash: secretFingerprint(key, 'gemini-key'), last4: key.slice(-4) });
     }
     return { added: fresh.length, skipped: incoming.length - fresh.length };
   });
@@ -102,9 +105,24 @@ export function reportGeminiKeyFailure(id: string, httpStatus: number, message: 
   return isDefinitiveKeyRejection(httpStatus);
 }
 
-/** Migra chaves cadastradas em texto puro (versões anteriores) para o formato criptografado. */
+/**
+ * Migração de dados das chaves (idempotente): criptografa as legadas em texto puro e preenche `key_hash`
+ * das linhas antigas. Se duas linhas legadas eram a mesma chave, a repetida é removida.
+ */
 export function encryptLegacyGeminiKeys(): void {
-  for (const row of listGeminiKeyRows()) {
-    if (!isEncrypted(row.api_key)) replaceGeminiKeySecret(row.id, encryptSecret(row.api_key), row.api_key.slice(-4));
-  }
+  transaction(() => {
+    const seen = listGeminiKeyHashes();
+    for (const row of listGeminiKeyRows()) {
+      if (row.key_hash && isEncrypted(row.api_key)) continue;
+      const plain = decryptSecret(row.api_key);
+      const hash = secretFingerprint(plain, 'gemini-key');
+      if (seen.has(hash) && row.key_hash !== hash) {
+        deleteGeminiKeyRow(row.id);
+        continue;
+      }
+      seen.add(hash);
+      if (!isEncrypted(row.api_key)) replaceGeminiKeySecret(row.id, encryptSecret(plain), hash, plain.slice(-4));
+      else setGeminiKeyHash(row.id, hash);
+    }
+  });
 }

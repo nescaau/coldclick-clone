@@ -18,7 +18,7 @@ import {
   type NewPhotoRow,
 } from '../repo/avatars';
 import { getRawSetting, setRawSetting } from '../repo/settings';
-import { portraitSvg, SEED_AVATARS, SEED_FLAG } from '../seed';
+import { GLOBAL_AVATARS, GLOBAL_SEED_FLAG, portraitSvg, SEED_AVATARS, SEED_FLAG } from '../seed';
 import { deleteFile, safeBaseName, saveBuffer, saveTextSync } from '../storage';
 import { transaction } from '../db';
 import type { AvatarDTO } from '../types';
@@ -36,6 +36,9 @@ function toDTOs(rows: AvatarRow[]): AvatarDTO[] {
     name: r.name,
     description: r.description,
     voice: r.voice,
+    scope: r.scope,
+    gender: r.gender,
+    age: r.age,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     photos: photos
@@ -99,10 +102,15 @@ export async function createAvatar(input: AvatarInput & { photos: File[] }): Pro
   validatePhotos(input.photos);
   const id = randomUUID();
   const photos = await storePhotos(id, input.photos);
-  transaction(() => {
-    insertAvatarRow(id, data.name, data.description, data.voice);
-    insertPhotoRows(id, photos);
-  });
+  try {
+    transaction(() => {
+      insertAvatarRow(id, data.name, data.description, data.voice);
+      insertPhotoRows(id, photos);
+    });
+  } catch (e) {
+    photos.forEach((p) => deleteFile(p.filePath)); // não deixa fotos órfãs se o banco recusar
+    throw e;
+  }
   return getAvatar(id);
 }
 
@@ -115,26 +123,48 @@ export async function updateAvatar(
   validatePhotos(input.photos);
   const newPhotos = await storePhotos(id, input.photos);
 
-  const removedPaths = transaction(() => {
-    updateAvatarRow(id, data.name, data.description, data.voice);
-    const removed = deletePhotoRows(id, input.removePhotoIds);
-    insertPhotoRows(id, newPhotos);
-    return removed;
-  });
+  let removedPaths: string[];
+  try {
+    removedPaths = transaction(() => {
+      updateAvatarRow(id, data.name, data.description, data.voice);
+      const removed = deletePhotoRows(id, input.removePhotoIds);
+      insertPhotoRows(id, newPhotos);
+      return removed;
+    });
+  } catch (e) {
+    newPhotos.forEach((p) => deleteFile(p.filePath));
+    throw e;
+  }
   // Arquivos só são apagados depois do commit, para não perder dado se a transação falhar.
   removedPaths.forEach(deleteFile);
   return getAvatar(id);
 }
 
 export function removeAvatar(id: string): void {
-  if (!findAvatarRow(id)) throw notFound('Avatar');
-  const paths = listPhotoPathsOf(id);
-  deleteAvatarRow(id);
+  // Leitura dos caminhos + exclusão na MESMA transação; os arquivos só saem do disco depois do commit.
+  const paths = transaction(() => {
+    if (!findAvatarRow(id)) throw notFound('Avatar');
+    const photoPaths = listPhotoPathsOf(id);
+    deleteAvatarRow(id);
+    return photoPaths;
+  });
   paths.forEach(deleteFile);
+}
+
+/** Avatares da "Biblioteca global" (sem fotos), criados uma única vez — independente do seed pessoal. */
+function seedGlobalAvatarsOnce(): void {
+  if (getRawSetting(GLOBAL_SEED_FLAG)) return;
+  transaction(() => {
+    for (const g of GLOBAL_AVATARS) {
+      insertAvatarRow(randomUUID(), g.name, g.description, g.voice, { scope: 'global', gender: g.gender, age: g.age });
+    }
+    setRawSetting(GLOBAL_SEED_FLAG, '1');
+  });
 }
 
 /** Cria os avatares de exemplo na primeira execução. Idempotente. */
 export function seedAvatarsOnce(): void {
+  seedGlobalAvatarsOnce();
   if (getRawSetting(SEED_FLAG)) return;
 
   // Arquivos primeiro; o marcador só é gravado se tudo der certo.

@@ -37,6 +37,9 @@ export function api<P = Record<string, string>>(fn: (req: NextRequest, ctx: Ctx<
 }
 
 export async function parseBody<S extends ZodTypeAny>(req: NextRequest, schema: S): Promise<z.infer<S>> {
+  // Exigir application/json impede o CSRF "simples" (formulário/fetch com text/plain não dispara preflight).
+  const type = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (type !== 'application/json') throw new AppError(415, 'Envie o corpo como application/json');
   let raw: unknown;
   try {
     raw = await req.json();

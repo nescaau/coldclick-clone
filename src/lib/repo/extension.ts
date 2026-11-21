@@ -8,6 +8,7 @@ export interface BrowserRow {
   version: string | null;
   flow_session_active: number;
   flow_account_email: string | null;
+  flow_reported_at: string | null;
   paired_at: string;
   last_seen_at: string;
 }
@@ -31,15 +32,23 @@ export function insertBrowserRow(b: { id: string; name: string; tokenHash: strin
     .run(b.id, b.name, b.tokenHash, now, now);
 }
 
+/**
+ * Registra um sinal de vida. `flow` só é informado quando o heartbeat TROUXE o estado do Flow; sem ele, o
+ * último estado válido é preservado (o serviço decide por quanto tempo ele vale, via `flow_reported_at`).
+ */
 export function recordHeartbeat(
   id: string,
-  info: { version: string | null; flowSessionActive: boolean; flowAccountEmail: string | null },
+  info: { version: string | null; flow?: { sessionActive: boolean; accountEmail: string | null } },
 ): void {
-  getDb()
-    .prepare(
-      `UPDATE extension_browsers SET last_seen_at = ?, version = ?, flow_session_active = ?, flow_account_email = ? WHERE id = ?`,
-    )
-    .run(nowIso(), info.version, info.flowSessionActive ? 1 : 0, info.flowAccountEmail, id);
+  const db = getDb();
+  const now = nowIso();
+  if (info.flow) {
+    db.prepare(
+      `UPDATE extension_browsers SET last_seen_at = ?, version = ?, flow_session_active = ?, flow_account_email = ?, flow_reported_at = ? WHERE id = ?`,
+    ).run(now, info.version, info.flow.sessionActive ? 1 : 0, info.flow.accountEmail, now, id);
+  } else {
+    db.prepare(`UPDATE extension_browsers SET last_seen_at = ?, version = ? WHERE id = ?`).run(now, info.version, id);
+  }
 }
 
 export const deleteBrowserRow = (id: string): boolean =>

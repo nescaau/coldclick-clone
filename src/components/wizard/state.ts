@@ -127,8 +127,10 @@ export function firstBlockedIndex(upTo: number, s: WizardState, flow: FlowGate):
 }
 
 /** Texto de apoio (aria-label) de uma etapa que ainda não pode ser aberta. */
-export function lockedHint(step: StepId, flow: FlowGate): string | null {
+export function lockedHint(step: StepId, _flow: FlowGate): string | null {
+  if (step === 'script') return 'Informe ou revise a fala do vídeo para continuar.';
   if (step === 'personalize') return 'Escolha um avatar válido e complete as descrições das variações.';
-  if (step === 'review') return flow.required ? 'Conecte a Executora do Flow e conclua a configuração antes de revisar.' : 'Conclua a configuração antes de revisar.';
+  // Na referência a Revisão mostra SEMPRE este texto enquanto está bloqueada.
+  if (step === 'review') return 'Conecte a Executora do Flow e conclua a configuração antes de revisar.';
   return null;
 }
