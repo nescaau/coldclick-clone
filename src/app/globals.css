@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tema do estúdio — valores EXATOS extraídos da plataforma de referência (reference/*.json → cssVars).
+ * Cores em "R G B" (sem vírgulas) para o Tailwind aplicar opacidade (bg-primary/20).
+ *
+ * Tema escuro: hex da referência.   --background #080c15  --card #0d1422  --sidebar #0b1323
+ *              --primary #2b6bff    --secondary #151f31   --muted #111b2c  --accent #182640
+ *              --border #24324a     --destructive #f0555a --ring #2b6bff   --radius 12px
+ * Extras medidos nas capturas: --link #93b4ff (eyebrows/links), --inset #0f1727 (painéis aninhados),
+ *              --success #3ac77f, --warning #e3a93e.
+ * Tema claro: NÃO existe nas capturas (a referência só mostra o escuro) — paleta estimada.
+ */
+:root,
+:root[data-theme='dark'] {
+  --background: 8 12 21;
+  --foreground: 230 236 245;
+  --card: 13 20 34;
+  --primary: 43 107 255;
+  --primary-foreground: 255 255 255;
+  --secondary: 21 31 49;
+  --muted: 17 27 44;
+  --muted-foreground: 139 151 168;
+  --accent: 24 38 64;
+  --destructive: 240 85 90;
+  --border: 36 50 74;
+  --ring: 43 107 255;
+  --sidebar: 11 19 35;
+  --link: 147 180 255;
+  --inset: 15 23 39;
+  --success: 58 199 127;
+  --warning: 227 169 62;
+  --radius: 12px;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --background: 245 247 251;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --primary: 43 107 255;
+  --primary-foreground: 255 255 255;
+  --secondary: 238 242 248;
+  --muted: 241 244 249;
+  --muted-foreground: 91 107 130;
+  --accent: 230 237 249;
+  --destructive: 217 58 64;
+  --border: 217 225 238;
+  --ring: 43 107 255;
+  --sidebar: 255 255 255;
+  --link: 29 78 216;
+  --inset: 244 247 252;
+  --success: 21 150 90;
+  --warning: 183 121 31;
+  color-scheme: light;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-background font-sans text-sm text-foreground antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border)) transparent;
+}
+
+::selection {
+  background: rgb(var(--primary) / 0.35);
+}
+
+/* Foco visível padrão (teclado) — anel de 2px na cor --ring, como nos componentes da referência. */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--ring));
+}
+
+@layer components {
+  /* Campos de formulário: bg-secondary/45, borda --input, raio md (10px), altura 44px (min-h-11). */
+  .field {
+    @apply min-h-11 w-full min-w-0 rounded-md border border-input bg-secondary/45 px-3 py-1 text-sm text-foreground shadow-xs
+      outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground
+      focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  textarea.field {
+    @apply py-2;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-link;
+  }
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+.skeleton {
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

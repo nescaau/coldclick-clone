@@ -1,0 +1,88 @@
+/**
+ * Transcrição da fala do vídeo via endpoint compatível com a API da OpenAI
+ * (`POST {baseUrl}/audio/transcriptions`) — serve para OpenAI, Groq, servidores
+ * whisper.cpp/faster-whisper locais etc.; basta trocar URL base, modelo e chave.
+ *
+ * Limite da API: ~25 MB por arquivo. Como vídeos podem ter até 500 MB, quando o
+ * `ffmpeg` está instalado extraímos só o áudio (mono, 16 kHz, 32 kbps ≈ 14 MB/h).
+ * Sem ffmpeg, só vídeos pequenos (≤ 25 MB) podem ser enviados diretamente.
+ */
+import { spawn } from 'node:child_process';
+import { openAsBlob } from 'node:fs';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { getWhisperConfig } from './services/settings-service';
+import { resolveStoragePath } from './storage';
+
+const API_MAX_BYTES = 25 * 1024 * 1024;
+
+export class TranscriptionConfigError extends Error {}
+
+function runFfmpeg(args: string[]): Promise<{ ok: boolean; missing: boolean; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
+    child.on('error', (e: NodeJS.ErrnoException) => resolve({ ok: false, missing: e.code === 'ENOENT', stderr: e.message }));
+    child.on('close', (code) => resolve({ ok: code === 0, missing: false, stderr }));
+  });
+}
+
+export async function transcribeVideoFile(
+  videoRelPath: string,
+  language: string,
+): Promise<{ text: string; language: string }> {
+  const cfg = getWhisperConfig();
+  if (!cfg.apiKey) {
+    throw new TranscriptionConfigError('Configure a chave da API de transcrição em Configurações, ou use o modo manual.');
+  }
+
+  const source = resolveStoragePath(videoRelPath);
+  let uploadPath = source;
+  let tmpDir: string | null = null;
+
+  try {
+    // 1) Tenta extrair só o áudio (reduz de centenas de MB para poucos MB).
+    tmpDir = await mkdtemp(path.join(os.tmpdir(), 'coldclick-audio-'));
+    const audioPath = path.join(tmpDir, 'audio.mp3');
+    const ff = await runFfmpeg(['-y', '-i', source, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '32k', audioPath]);
+
+    if (ff.ok) {
+      uploadPath = audioPath;
+    } else if (ff.missing) {
+      // 2) Sem ffmpeg: só dá para enviar o próprio vídeo se couber no limite da API.
+      const { size } = await stat(source);
+      if (size > API_MAX_BYTES) {
+        throw new Error(
+          'Este vídeo é grande demais para enviar direto (limite de 25 MB). Instale o ffmpeg (no Mac: "brew install ffmpeg") para extrair o áudio automaticamente, ou use o modo manual.',
+        );
+      }
+    } else {
+      throw new Error(`Não foi possível extrair o áudio do vídeo (ffmpeg): ${ff.stderr.split('\n').slice(-3).join(' ').trim()}`);
+    }
+
+    const isAudio = uploadPath !== source;
+    const form = new FormData();
+    form.append('file', await openAsBlob(uploadPath, { type: isAudio ? 'audio/mpeg' : 'video/mp4' }), isAudio ? 'audio.mp3' : path.basename(source));
+    form.append('model', cfg.model);
+    form.append('response_format', 'json');
+    if (language && language !== 'auto') form.append('language', language);
+
+    const res = await fetch(`${cfg.baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(10 * 60_000),
+    });
+
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 300);
+      throw new Error(`A API de transcrição respondeu ${res.status}: ${detail || res.statusText}`);
+    }
+    const data = (await res.json()) as { text?: string; language?: string };
+    return { text: (data.text ?? '').trim(), language: data.language ?? language };
+  } finally {
+    if (tmpDir) await rm(tmpDir, { recursive: true, force: true });
+  }
+}

@@ -1,0 +1,20 @@
+# dependências e build
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# dados locais (banco, uploads, arquivos gerados)
+data/
+
+# ambiente
+.env
+.env.local
+
+# sistema
+.DS_Store
+npm-debug.log*
+
+# material de referência da plataforma original (proprietário / dados pessoais)
+reference/

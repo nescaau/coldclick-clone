@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>ColdClick Conector</title>
+    <style>
+      body { width: 300px; margin: 0; padding: 16px; font: 13px system-ui, sans-serif; background: #12141b; color: #eceef4; }
+      h1 { font-size: 15px; margin: 0 0 12px; }
+      label { display: block; margin: 10px 0 4px; color: #8c92a3; font-size: 12px; }
+      input { box-sizing: border-box; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #2c303e; background: #1c1f29; color: inherit; }
+      input.code { font: 600 18px ui-monospace, monospace; letter-spacing: 0.2em; text-align: center; text-transform: uppercase; }
+      button { margin-top: 12px; width: 100%; padding: 9px; border: 0; border-radius: 6px; background: #38bdf8; color: #060e18; font-weight: 600; cursor: pointer; }
+      button.danger { background: transparent; border: 1px solid #f87171; color: #f87171; }
+      #status { margin-top: 12px; color: #8c92a3; font-size: 12px; }
+      #status.error { color: #f87171; }
+      #status.ok { color: #34d399; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>ColdClick Conector</h1>
+
+    <section id="unpaired">
+      <label for="server">Endereço do estúdio</label>
+      <input id="server" value="http://localhost:3000" />
+      <label for="code">Código de pareamento</label>
+      <input id="code" class="code" maxlength="9" placeholder="XXXX-XXXX" autocomplete="off" />
+      <button id="pair">Parear</button>
+    </section>
+
+    <section id="paired" hidden>
+      <p>Pareada com <strong id="paired-server"></strong></p>
+      <button id="unpair" class="danger">Desparear</button>
+    </section>
+
+    <p id="status"></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

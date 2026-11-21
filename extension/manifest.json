@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "ColdClick Conector (esqueleto)",
+  "version": "0.1.0",
+  "description": "Ponte entre o Estúdio Criativo (local) e o Google Flow. Fase 1: pareamento e sinal de vida. Fase 2: automação do Flow.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://flow.google.com/*",
+    "https://labs.google/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://flow.google.com/*",
+        "https://labs.google/fx/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "ColdClick Conector",
+    "default_popup": "popup.html"
+  }
+}
