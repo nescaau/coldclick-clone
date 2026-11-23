@@ -4,6 +4,7 @@
  */
 import type { FormatId, ModelId, ResolutionId } from '../catalog';
 import { getDb, nowIso } from '../db';
+import { INTERRUPTED_ERROR } from '../format';
 import { TRANSCRIPTION_STEP_WEIGHTS } from '../transcription-steps';
 import type { ItemKind, ItemStatus, JobKind, JobStatus, TranscriptSource } from '../types';
 
@@ -66,8 +67,8 @@ export interface JobItemRow {
   error: string | null;
 }
 
-/** Marca (no campo `error` do item) os itens parados por esgotar o teto de gerações — não são falhas. */
-export const INTERRUPTED_ERROR = 'Interrompido: teto de gerações do trabalho atingido';
+/** Marca dos itens interrompidos pelo teto de gerações (definida em format.ts para ser compartilhada com a UI). */
+export { INTERRUPTED_ERROR };
 
 const STEP_WEIGHT_CASE = Object.entries(TRANSCRIPTION_STEP_WEIGHTS)
   .map(([label, weight]) => `WHEN '${label.replace(/'/g, "''")}' THEN ${weight}`)

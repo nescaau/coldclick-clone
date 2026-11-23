@@ -15,7 +15,7 @@ import {
   SCRIPT_MODES,
 } from '@/lib/catalog';
 import { apiFetch, errorMessage, useInterval } from '@/lib/client';
-import { formatElapsed, isActiveStatus, phaseLabel, progressLabel, progressPercent } from '@/lib/format';
+import { formatElapsed, isActiveStatus, isRetryableItem, phaseLabel, progressLabel, progressPercent } from '@/lib/format';
 import { ROUTES } from '@/lib/nav';
 import { speechSeconds } from '@/lib/scenes';
 import type { ItemKind, JobDetailDTO, JobItemDTO } from '@/lib/types';
@@ -72,9 +72,9 @@ export function JobDetail({ initialJob }: { initialJob: JobDetailDTO }) {
   };
 
   const items = job.items.filter((i) => filter === 'all' || i.kind === filter);
-  // Itens "cancelled" em trabalho parcial/falho são os INTERRUPTED (teto de gerações): o serviço também os reexecuta,
-  // então o botão aparece mesmo em "0 de 20 vídeos · 0 falhas".
-  const hasRetryable = job.items.some((i) => i.status === 'failed' || i.status === 'cancelled');
+  // Mesmo critério de `resetFailedItems` (isRetryableItem): falhos + interrompidos pelo teto de gerações
+  // (cancelled com INTERRUPTED_ERROR); então o botão aparece mesmo em "0 de 20 vídeos · 0 falhas".
+  const hasRetryable = job.items.some(isRetryableItem);
   const canRetry = !isTranscription && (job.status === 'partial' || job.status === 'failed') && hasRetryable;
 
   const stats: Array<{ label: string; value: number; sub: string }> = isTranscription

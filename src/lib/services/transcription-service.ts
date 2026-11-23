@@ -8,7 +8,8 @@
  * gravada se o trabalho ainda estiver "em andamento" (nunca ressuscita um trabalho cancelado/excluído).
  *
  * Se o servidor cair no meio, o trabalho ficaria "em andamento" para sempre: `recoverStuckTranscriptions`
- * (chamada no bootstrap) o marca como falho.
+ * (chamada no bootstrap) o marca como falho; `sweepStuckTranscriptions` repete isso periodicamente no tick
+ * do worker, para o caso de o servidor voltar antes do prazo de 15 min.
  */
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_MODEL } from '../catalog';
@@ -131,9 +132,9 @@ export const TRANSCRIPTION_STALE_MS = 15 * 60_000;
  * Só recupera as iniciadas há mais de `TRANSCRIPTION_STALE_MS`: se outro processo usa o mesmo banco e acabou de
  * iniciar uma transcrição, ela não é derrubada por este boot. (`staleMs = 0` recupera todas — uso em testes.)
  */
-export function recoverStuckTranscriptions(staleMs = TRANSCRIPTION_STALE_MS): number {
+export function recoverStuckTranscriptions(staleMs = TRANSCRIPTION_STALE_MS, now: number = Date.now()): number {
   let recovered = 0;
-  for (const id of listRunningTranscriptionIds(new Date(Date.now() - staleMs + 1).toISOString())) {
+  for (const id of listRunningTranscriptionIds(new Date(now - staleMs + 1).toISOString())) {
     if (inFlight().has(id)) continue;
     transaction(() => {
       if (failTranscriptionJob(id, 'Interrompida: o servidor foi reiniciado durante a transcrição.')) {
@@ -143,4 +144,26 @@ export function recoverStuckTranscriptions(staleMs = TRANSCRIPTION_STALE_MS): nu
     });
   }
   return recovered;
+}
+
+/** Intervalo mínimo entre varreduras periódicas (o tick do worker roda a cada segundo; a consulta não precisa). */
+export const TRANSCRIPTION_SWEEP_INTERVAL_MS = 60_000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __coldclickTranscriptionSweepAt: number | undefined;
+}
+
+/**
+ * Varredura PERIÓDICA (chamada pelo tick do worker): se o servidor cair e voltar em menos de
+ * `TRANSCRIPTION_STALE_MS`, a órfã não seria pega pelo bootstrap — esta varredura a recupera assim que
+ * passar do prazo, com o mesmo TTL e a mesma guarda de status (só `running`, nunca uma que tenha controlador
+ * neste processo nem uma iniciada há menos que o prazo). Limitada a uma execução por intervalo.
+ * Retorna quantas recuperou (0 se ainda não era hora de varrer).
+ */
+export function sweepStuckTranscriptions(now: number = Date.now()): number {
+  const last = globalThis.__coldclickTranscriptionSweepAt;
+  if (last !== undefined && now - last < TRANSCRIPTION_SWEEP_INTERVAL_MS) return 0;
+  globalThis.__coldclickTranscriptionSweepAt = now;
+  return recoverStuckTranscriptions(TRANSCRIPTION_STALE_MS, now);
 }

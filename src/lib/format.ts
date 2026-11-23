@@ -1,5 +1,16 @@
 /** Utilitários de formatação (seguros para cliente e servidor). */
-import type { JobDTO, JobStatus } from './types';
+import type { ItemStatus, JobDTO, JobStatus } from './types';
+
+/** Marca (no campo `error` do item) os itens parados por esgotar o teto de gerações — não são falhas. */
+export const INTERRUPTED_ERROR = 'Interrompido: teto de gerações do trabalho atingido';
+
+/**
+ * CRITÉRIO ÚNICO de "item reexecutável" (espelhado pelo SQL de `resetFailedItems` e usado pela UI em JobDetail):
+ * itens `failed` OU `cancelled` com `error = INTERRUPTED_ERROR`. Um `cancelled` genérico (cancelamento manual)
+ * NÃO é reexecutável — o próprio trabalho fica `cancelled`, e reexecutar só vale para `partial`/`failed`.
+ */
+export const isRetryableItem = (i: { status: ItemStatus; error: string | null }): boolean =>
+  i.status === 'failed' || (i.status === 'cancelled' && i.error === INTERRUPTED_ERROR);
 
 export function fileUrl(relPath: string): string {
   return '/api/files/' + relPath.split('/').map(encodeURIComponent).join('/');

@@ -106,6 +106,26 @@ describe('fila e executor', () => {
     expect(runUntilDone(job.id).status).toBe('completed');
   });
 
+  it('critério de "reexecutável" é único: isRetryableItem (UI) == itens que resetFailedItems devolve a pendente', async () => {
+    const { isRetryableItem, INTERRUPTED_ERROR } = await import('./format');
+    expect(m.jobsRepo.INTERRUPTED_ERROR).toBe(INTERRUPTED_ERROR);
+    expect(isRetryableItem({ status: 'failed', error: 'x' })).toBe(true);
+    expect(isRetryableItem({ status: 'cancelled', error: INTERRUPTED_ERROR })).toBe(true);
+    expect(isRetryableItem({ status: 'cancelled', error: null })).toBe(false); // cancelamento genérico
+    expect(isRetryableItem({ status: 'done', error: null })).toBe(false);
+    const job = m.jobs.createJob(baseInput(newVideo()));
+    m.jobs.cancelJob(job.id); // itens cancelled sem INTERRUPTED_ERROR
+    const generic = m.jobs.getJob(job.id).items;
+    expect(generic.every((i) => !isRetryableItem(i))).toBe(true);
+    expect(m.jobsRepo.resetFailedItems(job.id)).toBe(0);
+    const interrupted = m.jobs.createJob(baseInput(newVideo()));
+    m.db.getDb().prepare('UPDATE jobs SET max_generations = 1 WHERE id = ?').run(interrupted.id);
+    const done = runUntilDone(interrupted.id);
+    const retryable = done.items.filter(isRetryableItem).length;
+    expect(retryable).toBeGreaterThan(0);
+    expect(m.jobsRepo.resetFailedItems(interrupted.id)).toBe(retryable);
+  });
+
   it('reenfileirar põe o trabalho no FIM da fila (não fura a vez de quem já esperava)', async () => {
     const a = m.jobs.createJob(baseInput(newVideo()));
     m.db.getDb().prepare('UPDATE jobs SET max_generations = 1 WHERE id = ?').run(a.id);
@@ -155,6 +175,39 @@ describe('transcrição como trabalho', () => {
     m.db.getDb().prepare('UPDATE jobs SET started_at = ? WHERE id = ?').run(old, 'transc-viva');
     expect(m.transcription.recoverStuckTranscriptions()).toBe(1);
     expect(m.jobs.getJob('transc-viva').status).toBe('failed');
+  });
+
+  it('varredura periódica (fora do boot): recupera órfã > 15 min e NÃO derruba transcrição legítima em andamento', () => {
+    const insert = (id: string) =>
+      m.jobsRepo.insertTranscriptionJob({ id, title: id, videoId: newVideo(), language: 'original', defaultModel: 'veo-3.1-lite' });
+    const startedAgo = (id: string, ms: number) =>
+      m.db.getDb().prepare('UPDATE jobs SET started_at = ? WHERE id = ?').run(new Date(Date.now() - ms).toISOString(), id);
+    insert('sweep-orfa');
+    startedAgo('sweep-orfa', m.transcription.TRANSCRIPTION_STALE_MS + 60_000); // órfã: iniciada há 16 min
+    insert('sweep-viva');
+    startedAgo('sweep-viva', 5 * 60_000); // legítima: iniciada há 5 min
+    insert('sweep-local');
+    startedAgo('sweep-local', m.transcription.TRANSCRIPTION_STALE_MS + 60_000); // antiga, mas com controlador NESTE processo
+    globalThis.__coldclickTranscriptions = new Map([['sweep-local', new AbortController()]]);
+    try {
+      globalThis.__coldclickTranscriptionSweepAt = undefined;
+      const t0 = Date.now();
+      expect(m.transcription.sweepStuckTranscriptions(t0)).toBe(1);
+      expect(m.jobs.getJob('sweep-orfa').status).toBe('failed');
+      expect(m.jobs.getJob('sweep-orfa').events.some((e) => e.status === 'failed')).toBe(true);
+      expect(m.jobs.getJob('sweep-viva').status).toBe('running');
+      expect(m.jobs.getJob('sweep-local').status).toBe('running');
+      // limitada por intervalo: nova chamada logo em seguida não varre; depois do intervalo, varre de novo
+      expect(m.transcription.sweepStuckTranscriptions(t0 + 1_000)).toBe(0);
+      // 5 min + 11 min depois, a "viva" também passou do prazo (a varredura só olha o relógio e o status)
+      expect(m.transcription.sweepStuckTranscriptions(t0 + 11 * 60_000 + m.transcription.TRANSCRIPTION_SWEEP_INTERVAL_MS)).toBe(1);
+      expect(m.jobs.getJob('sweep-viva').status).toBe('failed');
+      expect(m.jobs.getJob('sweep-local').status).toBe('running'); // continua protegida pelo controlador
+    } finally {
+      globalThis.__coldclickTranscriptions = undefined;
+      globalThis.__coldclickTranscriptionSweepAt = undefined;
+      m.jobsRepo.failTranscriptionJob('sweep-local', 'limpeza do teste');
+    }
   });
 
   it('cancelar uma transcrição em andamento a marca como cancelada', () => {

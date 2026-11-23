@@ -4,6 +4,7 @@
  */
 import { nowIso } from './db';
 import { runnerConcurrency, runTick, simulatedFailureRate } from './services/job-runner';
+import { sweepStuckTranscriptions } from './services/transcription-service';
 
 const TICK_MS = 1000;
 
@@ -27,6 +28,7 @@ function safeTick(): void {
   state.lastTickAt = nowIso();
   try {
     runTick();
+    sweepStuckTranscriptions(); // órfãs > 15 min (servidor que voltou cedo demais para o bootstrap pegar)
     state.lastError = null;
   } catch (e) {
     state.lastError = e instanceof Error ? e.message : String(e);
