@@ -7,8 +7,8 @@
  *     "conectar", o que mata DNS rebinding.
  *  4. Redirecionamentos são seguidos manualmente, revalidando e fixando o IP a cada salto; o corpo das
  *     respostas 3xx é descartado.
- *  5. IPv6 "disfarçado" é desmapeado antes da checagem: ::ffff:7f00:1, NAT64 (64:ff9b::/96), 6to4 (2002::/16)
- *     e IPv4-compatível passam pelas regras de IPv4; Teredo é bloqueado.
+ *  5. IPv6 "disfarçado" é desmapeado antes da checagem: ::ffff:7f00:1, NAT64 (64:ff9b::/96 e 64:ff9b:1::/48),
+ *     IPv4-translated (::ffff:0:a.b.c.d), 6to4 (2002::/16) e IPv4-compatível passam pelas regras de IPv4; Teredo é bloqueado.
  */
 import dns from 'node:dns/promises';
 import http from 'node:http';
@@ -91,6 +91,9 @@ export function embeddedIPv4(h: number[]): string | null {
   if (zeros(0, 5) && h[5] === 0xffff) return v4From(h[6], h[7]); // ::ffff:a.b.c.d
   if (zeros(0, 6) && (h[6] !== 0 || h[7] > 1)) return v4From(h[6], h[7]); // ::a.b.c.d (compatível, obsoleto)
   if (h[0] === 0x64 && h[1] === 0xff9b && zeros(2, 6)) return v4From(h[6], h[7]); // NAT64 64:ff9b::/96
+  // NAT64 de uso local 64:ff9b:1::/48 (RFC 8215): o IPv4 fica nos bits 48–87 (RFC 6052 §2.2), pulando o octeto "u" (bits 64–71).
+  if (h[0] === 0x64 && h[1] === 0xff9b && h[2] === 1) return v4From(h[3], ((h[4] & 255) << 8) | (h[5] >> 8));
+  if (zeros(0, 4) && h[4] === 0xffff && h[5] === 0) return v4From(h[6], h[7]); // IPv4-translated ::ffff:0:a.b.c.d (SIIT, RFC 2765)
   if (h[0] === 0x2002) return v4From(h[1], h[2]); // 6to4
   return null;
 }

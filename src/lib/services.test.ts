@@ -24,6 +24,7 @@ type Mods = {
   ext: typeof import('./services/extension-service');
   boot: typeof import('./services/bootstrap');
   avatars: typeof import('./services/avatar-service');
+  settings: typeof import('./services/settings-service');
 };
 let m: Mods;
 
@@ -47,6 +48,7 @@ beforeAll(async () => {
     ext: await import('./services/extension-service'),
     boot: await import('./services/bootstrap'),
     avatars: await import('./services/avatar-service'),
+    settings: await import('./services/settings-service'),
   };
   m.boot.ensureBootstrapped();
 });
@@ -137,11 +139,22 @@ describe('transcrição como trabalho', () => {
     m.jobsRepo.insertTranscriptionJob({ id, title: 'Transcrição · órfã', videoId: video, language: 'original', defaultModel: 'veo-3.1-lite' });
     m.events.addJobEvent(id, 'Transcrição solicitada');
     expect(m.jobs.getJob(id).status).toBe('running');
-    expect(m.transcription.recoverStuckTranscriptions()).toBeGreaterThanOrEqual(1);
+    expect(m.transcription.recoverStuckTranscriptions(0)).toBeGreaterThanOrEqual(1);
     const job = m.jobs.getJob(id);
     expect(job.status).toBe('failed');
     expect(job.error).toMatch(/reiniciado/);
     expect(job.events.some((e) => e.status === 'failed')).toBe(true);
+  });
+
+  it('recuperação no boot ignora transcrição recente (outro processo no mesmo banco) e pega a antiga', () => {
+    const video = newVideo();
+    m.jobsRepo.insertTranscriptionJob({ id: 'transc-viva', title: 'Transcrição · viva', videoId: video, language: 'original', defaultModel: 'veo-3.1-lite' });
+    expect(m.transcription.recoverStuckTranscriptions()).toBe(0);
+    expect(m.jobs.getJob('transc-viva').status).toBe('running');
+    const old = new Date(Date.now() - m.transcription.TRANSCRIPTION_STALE_MS - 60_000).toISOString();
+    m.db.getDb().prepare('UPDATE jobs SET started_at = ? WHERE id = ?').run(old, 'transc-viva');
+    expect(m.transcription.recoverStuckTranscriptions()).toBe(1);
+    expect(m.jobs.getJob('transc-viva').status).toBe('failed');
   });
 
   it('cancelar uma transcrição em andamento a marca como cancelada', () => {
@@ -271,5 +284,16 @@ describe('avatares', () => {
     m.avatars.removeAvatar(created.id);
     expect(fs.existsSync(file)).toBe(false);
     expect(() => m.avatars.removeAvatar(created.id)).toThrow(/não encontrado/);
+  });
+});
+
+describe('troca da pasta de armazenamento', () => {
+  it('é recusada enquanto houver trabalho em fila ou em andamento', async () => {
+    const job = m.jobs.createJob(baseInput(newVideo()));
+    expect(job.status).toBe('queued');
+    const target = path.join(dir, 'outra-pasta');
+    await expect(m.settings.updateSettings({ storageDir: target })).rejects.toThrow(/enquanto houver trabalhos em fila ou em andamento/);
+    expect(m.settings.getPublicSettings().storageDirIsDefault).toBe(true); // nada foi gravado
+    expect(fs.existsSync(path.join(target, 'videos'))).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import { decryptSecret, encryptSecret } from '../crypto';
 import { AppError } from '../errors';
 import { maskSecret } from '../format';
 import { countGeminiKeys } from '../repo/gemini-keys';
+import { countActiveJobs } from '../repo/jobs';
 import { getRawSetting, setRawSetting } from '../repo/settings';
 import { prepareStorageMigration, type StorageMigration } from '../storage-migrate';
 import type { PublicSettingsDTO } from '../types';
@@ -94,7 +95,7 @@ export interface SettingsUpdate {
   storageDir?: string;
 }
 
-export function updateSettings(input: SettingsUpdate): PublicSettingsDTO {
+export async function updateSettings(input: SettingsUpdate): Promise<PublicSettingsDTO> {
   // Valida tudo antes de gravar qualquer coisa: a atualização é "tudo ou nada".
   let storageDir: string | undefined;
   let target: string | undefined;
@@ -115,7 +116,12 @@ export function updateSettings(input: SettingsUpdate): PublicSettingsDTO {
   // depois que a nova configuração foi gravada (nada fica órfão nem se perde se algo falhar).
   let migration: StorageMigration | undefined;
   if (storageDir !== undefined && target) {
-    migration = prepareStorageMigration(getStorageDir(), target);
+    // Com trabalho em fila/andamento o executor está lendo/gravando arquivos na pasta atual: copiar agora
+    // poderia perder um arquivo recém-gravado. Peça ao usuário para esperar ou cancelar.
+    if (path.resolve(target) !== path.resolve(getStorageDir()) && countActiveJobs() > 0) {
+      throw new AppError(409, 'Não é possível trocar a pasta de armazenamento enquanto houver trabalhos em fila ou em andamento. Aguarde terminar ou cancele-os e tente de novo.');
+    }
+    migration = await prepareStorageMigration(getStorageDir(), target);
     try {
       setRawSetting('storage_dir', storageDir);
     } catch (e) {

@@ -72,7 +72,10 @@ export function JobDetail({ initialJob }: { initialJob: JobDetailDTO }) {
   };
 
   const items = job.items.filter((i) => filter === 'all' || i.kind === filter);
-  const canRetry = !isTranscription && (job.status === 'partial' || job.status === 'failed') && failedItems > 0;
+  // Itens "cancelled" em trabalho parcial/falho são os INTERRUPTED (teto de gerações): o serviço também os reexecuta,
+  // então o botão aparece mesmo em "0 de 20 vídeos · 0 falhas".
+  const hasRetryable = job.items.some((i) => i.status === 'failed' || i.status === 'cancelled');
+  const canRetry = !isTranscription && (job.status === 'partial' || job.status === 'failed') && hasRetryable;
 
   const stats: Array<{ label: string; value: number; sub: string }> = isTranscription
     ? [

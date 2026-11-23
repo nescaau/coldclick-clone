@@ -1,7 +1,8 @@
 /**
  * Defesa de um servidor LOCAL contra páginas web maliciosas abertas no mesmo computador:
  *
- *  - Host allowlist (DNS rebinding): o app só responde quando o cabeçalho Host é localhost/127.0.0.1/[::1]
+ *  - Host allowlist (DNS rebinding), em TODAS as rotas (páginas, RSC e API): o app só responde quando o
+ *    cabeçalho Host é localhost/127.0.0.1/[::1]
  *    (ou um host listado em COLDCLICK_ALLOWED_HOSTS, separado por vírgula). Um site que faça o seu domínio
  *    resolver para 127.0.0.1 chega com outro Host e é recusado.
  *  - CSRF: requisições que ALTERAM dados (POST/PUT/PATCH/DELETE) precisam ser da própria origem —
@@ -37,7 +38,9 @@ export function middleware(req: NextRequest) {
   const host = req.headers.get('host') ?? '';
   if (!allowedHosts().has(hostnameOf(host))) return deny('Host não permitido');
 
-  if (SAFE_METHODS.has(req.method) || EXTENSION_PATHS.has(req.nextUrl.pathname)) return NextResponse.next();
+  // Fora de /api (páginas e RSC) só vale a checagem de Host: ela impede que DNS rebinding leia HTML/RSC com dados das contas.
+  const isApi = req.nextUrl.pathname === '/api' || req.nextUrl.pathname.startsWith('/api/');
+  if (!isApi || SAFE_METHODS.has(req.method) || EXTENSION_PATHS.has(req.nextUrl.pathname)) return NextResponse.next();
 
   const site = req.headers.get('sec-fetch-site');
   if (site && site !== 'same-origin' && site !== 'none') return deny('Requisição de outra origem bloqueada');
@@ -55,4 +58,5 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: '/api/:path*' };
+/** Todas as rotas (páginas, RSC e API), exceto os estáticos do Next. */
+export const config = { matcher: ['/((?!_next/static|_next/image).*)'] };

@@ -238,8 +238,20 @@ export function cancelTranscriptionJob(id: string): boolean {
   );
 }
 
-export const listRunningTranscriptionIds = (): string[] =>
-  (getDb().prepare(`SELECT id FROM jobs WHERE kind = 'transcription' AND status = 'running'`).all() as { id: string }[]).map((r) => r.id);
+/**
+ * Transcrições "em andamento" iniciadas ANTES de `startedBefore` (ISO). O corte evita que um segundo processo
+ * sobre o mesmo banco marque como falha uma transcrição que outro processo ainda está executando.
+ */
+export const listRunningTranscriptionIds = (startedBefore: string): string[] =>
+  (
+    getDb()
+      .prepare(`SELECT id FROM jobs WHERE kind = 'transcription' AND status = 'running' AND (started_at IS NULL OR started_at < ?)`)
+      .all(startedBefore) as { id: string }[]
+  ).map((r) => r.id);
+
+/** Trabalhos que ainda estão em fila ou em andamento (inclui transcrições, que leem os arquivos de vídeo). */
+export const countActiveJobs = (): number =>
+  (getDb().prepare(`SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running')`).get() as { n: number }).n;
 
 export const listTranscriptionJobIdsForVideo = (videoId: string): string[] =>
   (getDb().prepare(`SELECT id FROM jobs WHERE kind = 'transcription' AND video_id = ?`).all(videoId) as { id: string }[]).map((r) => r.id);

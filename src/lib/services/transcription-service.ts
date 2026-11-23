@@ -119,12 +119,21 @@ export function cancelTranscription(jobId: string): boolean {
 }
 
 /**
+ * Prazo máximo de uma transcrição viva: a chamada HTTP tem teto de 10 min (+ extração do áudio). Passado isso,
+ * uma transcrição "em andamento" só pode estar órfã.
+ */
+export const TRANSCRIPTION_STALE_MS = 15 * 60_000;
+
+/**
  * Bootstrap: transcrições "em andamento" sem controlador neste processo ficaram órfãs (o servidor caiu
  * ou foi reiniciado durante a chamada). Marca como falhas, com evento, para não ficarem girando para sempre.
+ *
+ * Só recupera as iniciadas há mais de `TRANSCRIPTION_STALE_MS`: se outro processo usa o mesmo banco e acabou de
+ * iniciar uma transcrição, ela não é derrubada por este boot. (`staleMs = 0` recupera todas — uso em testes.)
  */
-export function recoverStuckTranscriptions(): number {
+export function recoverStuckTranscriptions(staleMs = TRANSCRIPTION_STALE_MS): number {
   let recovered = 0;
-  for (const id of listRunningTranscriptionIds()) {
+  for (const id of listRunningTranscriptionIds(new Date(Date.now() - staleMs + 1).toISOString())) {
     if (inFlight().has(id)) continue;
     transaction(() => {
       if (failTranscriptionJob(id, 'Interrompida: o servidor foi reiniciado durante a transcrição.')) {

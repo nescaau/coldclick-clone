@@ -4,4 +4,4 @@ import { getPublicSettings, updateSettings } from '@/lib/services/settings-servi
 
 export const GET = api(async () => json(getPublicSettings()));
 
-export const PUT = api(async (req) => json(updateSettings(await parseBody(req, settingsSchema))));
+export const PUT = api(async (req) => json(await updateSettings(await parseBody(req, settingsSchema))));

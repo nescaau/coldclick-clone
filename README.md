@@ -153,17 +153,19 @@ Pareamento de **vários** navegadores: nome do Chrome → código de uso único 
 App **local, sem login de usuário**; as defesas abaixo protegem contra páginas maliciosas abertas no mesmo computador:
 
 - **Bind em 127.0.0.1** (scripts `dev`/`start`) + `middleware.ts`: só aceita `Host` localhost/127.0.0.1/[::1] (ou
-  `COLDCLICK_ALLOWED_HOSTS`) — barra DNS rebinding — e recusa requisições que alteram dados vindas de outra origem
+  `COLDCLICK_ALLOWED_HOSTS`) — barra DNS rebinding — em **todas** as rotas (páginas/RSC e API, exceto `_next/static` e
+  `_next/image`) e, na API, recusa requisições que alteram dados vindas de outra origem
   (`Sec-Fetch-Site`/`Origin`). As rotas da extensão (pareamento e heartbeat) só passam pela checagem de Host; elas se protegem
   por código de uso único / token Bearer.
 - Corpos JSON exigem `Content-Type: application/json` (um formulário/`text/plain` de outro site não passa).
 - **Importação por URL (SSRF)**: `lib/net-guard.ts` usa `net.BlockList`, **desmapeia IPv6 embutido** (`::ffff:7f00:1`,
-  `::ffff:a9fe:a9fe`, NAT64 `64:ff9b::/96`, 6to4, IPv4-compatível), bloqueia `fe80::/10`, `fec0::/10`, ULA, Teredo e multicast,
+  `::ffff:a9fe:a9fe`, NAT64 `64:ff9b::/96` e `64:ff9b:1::/48`, IPv4-translated, 6to4, IPv4-compatível), bloqueia `fe80::/10`, `fec0::/10`, ULA, Teredo e multicast,
   exige que **todos** os endereços do nome sejam públicos e **fixa o IP validado na conexão** (sem segunda resolução → sem DNS
   rebinding). Redirecionamentos são revalidados salto a salto e o corpo das respostas 3xx é descartado.
 - Arquivos servidos com CSP `sandbox`; limite global de tentativas erradas no pareamento; segredos criptografados em repouso.
 - Trocar a **pasta de armazenamento** copia os arquivos para a nova pasta, confere (nº de arquivos e bytes) e só então esvazia a
-  antiga; recusa destino não vazio ou aninhado. Nada fica órfão.
+  antiga; recusa destino não vazio ou aninhado. A cópia é assíncrona (não trava o servidor) e a troca é **recusada enquanto houver
+  trabalho em fila ou em andamento**. Nada fica órfão.
 
 ---
 
@@ -186,8 +188,12 @@ telas a paleta clara é derivada dos mesmos tokens e **não foi conferida contra
 
 - **Modal "Confirmar gerações reais no Flow"** (Revisão → "Preparar geração"): nenhum `.snap.txt` mostra esse estado; o modal
   existe, mas seu texto/layout **não está verificado**. Capture o estado real para conferirmos.
-- **"Ponte validada por eco em N ms"**: os textos são os da referência, mas o `N` é o **tempo real de ida e volta ao estúdio**
-  (consulta do estado da ponte), não um eco medido na extensão — a extensão desta réplica ainda não responde a "ping".
+- **"Ponte validada por eco em N ms"** e **"Último teste: ida e volta confirmada em N ms"**: os três textos do teste de conexão
+  ("Ponte validada por eco…", "Ponte Flow validada…" e "…ida e volta confirmada…") são **literais de `reference/accounts.json`**
+  (`textDump`; o último também em `accounts.snap.txt`), por isso foram mantidos. O `N`, porém, é o **tempo real de ida e volta ao
+  estúdio local** (consulta do estado da ponte), **não** um eco medido na extensão — a extensão desta réplica ainda não responde a
+  "ping". Ou seja: o texto é fiel à referência, a medição é do servidor local; trocar o literal por algo "mais exato" nos afastaria
+  da referência.
 - **Diálogo de transcrição** usa os literais da referência ("…no Google Flow", "consumir créditos"), mas aqui a transcrição
   usa o **endpoint Whisper configurado** (não o Flow). O texto é fiel à referência, não à implementação.
 - **Contas Flow**: "Adicionar conta" e "Remover conta" são mantidos (necessários para a réplica), mas **não aparecem** na captura

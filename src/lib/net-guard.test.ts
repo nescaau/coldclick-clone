@@ -18,6 +18,10 @@ describe('isBlockedAddress — IPv6 e formas "disfarçadas" (bypass da revisão)
     ['64:ff9b::7f00:1', 'NAT64 → 127.0.0.1'],
     ['64:ff9b::a9fe:a9fe', 'NAT64 → 169.254.169.254'],
     ['64:ff9b::10.0.0.1', 'NAT64 em notação decimal → 10.0.0.1'],
+    ['64:ff9b:1:7f00:0:100::', 'NAT64 local-use /48 (RFC 8215) → 127.0.0.1'],
+    ['64:ff9b:1:a9fe:a9:fe00::', 'NAT64 local-use /48 → 169.254.169.254'],
+    ['::ffff:0:7f00:1', 'IPv4-translated (SIIT) → 127.0.0.1'],
+    ['::ffff:0:a9fe:a9fe', 'IPv4-translated → 169.254.169.254'],
     ['2002:7f00:1::', '6to4 → 127.0.0.1'],
     ['::127.0.0.1', 'IPv4-compatível'],
     ['::1', 'loopback'],
@@ -33,7 +37,7 @@ describe('isBlockedAddress — IPv6 e formas "disfarçadas" (bypass da revisão)
     ['fe80::1%eth0', 'com zona'],
   ])('bloqueia %s (%s)', (ip) => expect(isBlockedAddress(ip)).toBe(true));
 
-  it.each(['2606:4700:4700::1111', '2001:4860:4860::8888', '::ffff:8.8.8.8', '64:ff9b::808:808'])('permite %s', (ip) =>
+  it.each(['2606:4700:4700::1111', '2001:4860:4860::8888', '::ffff:8.8.8.8', '64:ff9b::808:808', '64:ff9b:1:808:8:800::', '::ffff:0:808:808'])('permite %s', (ip) =>
     expect(isBlockedAddress(ip)).toBe(false),
   );
 
