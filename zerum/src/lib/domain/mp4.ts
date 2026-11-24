@@ -32,6 +32,6 @@ export function displayName(raw: string): string {
   const clean = base.replace(/[\u0000-\u001f\u007f]/g, '').trim();
   const full = clean || 'viral.mp4';
   if (full.length <= MAX_NAME_CHARS) return full;
-  const ext = /.mp4$/i.exec(full)?.[0] ?? '';
+  const ext = /\.mp4$/i.exec(full)?.[0] ?? '';
   return full.slice(0, MAX_NAME_CHARS - ext.length) + ext;
 }
