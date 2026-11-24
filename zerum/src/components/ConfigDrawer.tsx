@@ -7,6 +7,7 @@ import {
   ALT_COLOR_LABEL,
   BRAIN_OPTIONS,
   IMAGE_MODEL_OPTIONS,
+  imageModelNote,
   PARALLEL_OPTIONS,
   SUBTITLE_COLORS,
   SUBTITLE_FONTS,
@@ -124,7 +125,7 @@ export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: ()
             ))}
           </select>
         </label>
-        <Ajuda>Melhor rosto. Se o modelo bater o limite do dia, o Zerum troca sozinho pro próximo.</Ajuda>
+        <Ajuda>{imageModelNote(s.imageModel)} Se o modelo bater o limite do dia, o Zerum troca sozinho pro próximo.</Ajuda>
         <Ajuda>Modelo de vídeo: escolhido por conta, em Conexões → Contas que geram vídeo (todos os modelos de cada conta, com o custo).</Ajuda>
         <label className="flex items-start gap-2 text-xs text-white">
           <input type="checkbox" checked={s.flowCopy} onChange={(e) => void salvar({ flowCopy: e.target.checked })} className="mt-0.5" />

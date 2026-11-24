@@ -111,7 +111,7 @@ snaps não mostram — cartão de lote, 2º clique, plano, formulário "Alterar 
 reescritos); (3) `001-zerum.snap.txt` e `zerum-index.html` (casca). **Exceção declarada:** `normalizeHex` e `BALLOON_COLORS`
 reproduzem quase linha a linha as funções `Wr`/`uE` do original (a paleta e o hex precisam ser idênticos).
 
-### Recon de 24/11 (conta real do Henrique: 5 avatares, 1 viral, LOG real)
+### Recon de 24/11 (conta real do assinante: 5 avatares, 1 viral, LOG real)
 
 Capturas `r10-producao/videos/analisados/manual`, `r11-config`, `r4-avatares` (+ shots) — **autoridade máxima**, acima dos
 snaps de 23/11. O que mudou no clone por causa delas:
@@ -126,7 +126,7 @@ snaps de 23/11. O que mudou no clone por causa delas:
   desconhecido; o clone só tem esse modelo).
 - **"Falta:"** agora é `ℹ Falta: Qual palavra o público vai comentar? .` (o ponto final é um nó separado no original) e mostra
   **uma pendência por vez**. Evidência: no snap o viral não estava escolhido e nenhum avatar marcado, e mesmo assim só a palavra
-  aparece. A ordem dos extras do clone (viral → avatares, depois da palavra) é **inferência minha**.
+  aparece. Os extras são **literais do bundle** (palavra → viral → marcados): "suba um viral e espere a leitura (passo 1)", "marque quem aparece (passo 3) — só os marcados entram no vídeo" e, com viral não lido, "o viral escolhido não foi lido — clique em \"tentar ler de novo\"". Notas: o nome "Claude Opus 5.5 (Medium)" veio do briefing da orquestração, **não de captura** (o bundle só tem "Contas com o Claude Opus 5.5 veem as duas opções aqui"; o sufixo "(padrão e recomendado)" está confirmado como anexo à opção padrão). A nota da Imagem em ⚙ (função `lle`) muda por modelo: Pro "Melhor rosto."; Nano Banana 2 "Equilíbrio entre rosto e velocidade."; 2 Lite "Mais rápido.".
 - **ANALISADOS**: data no formato en-US `11/23, 07:50 PM` (`fmtDateTime`, vale p/ todo o app), meta só `32 s · data` (saiu o
   enquadramento), Gancho/Estrutura cortados em **200** caracteres + `...` (medido: os dois trechos do snap têm exatamente 200).
 - **Avatares**: foto em pé **9:16**; grade de **2 colunas** em tela estreita (r4, ~930 px) e **4** em tela larga (r10, ~1900 px) —
@@ -188,7 +188,7 @@ e o clone precisa **dizer a verdade** sobre o que é local:
   `✕ Confirmar: cancelar "…"?`, "↻ Regerar todas as cenas com falha (N)", "Baixar todos os prontos (N)", "✓ Aprovar lote →
   Vídeos", "✕ Descartar lote", "⬇ Baixar MP4", "↻ Tentar de novo", o aviso de 2º clique, a mensagem "O Google não conseguiu terminar
   esta cena…".)
-- **Manual**: itens extras de "Falta:" ("Suba o viral (passo 1)", "Marque quem aparece (passo 3)"); "Guardando o viral…". (Os
+- **Manual**: itens extras de "Falta:" (literais do bundle, em minúsculas: "suba um viral e espere a leitura (passo 1)", "marque quem aparece (passo 3) — só os marcados entram no vídeo"); "Guardando o viral…". (Os
   chips "usar este" / "✓ base do lote" são literais do `zerum-app.js`.)
 - **Avatares**: avisos de "fase futura" (variações, galeria do Flow, ✨ Gerar sem foto); "Sem foto"; "SEXO?"; "Nenhum avatar ainda.
   Mande a sua foto, gere do zero ou preencha à mão."; diálogo de apagar ("Apagar "X"? A foto sai só deste computador…") e os
@@ -244,7 +244,7 @@ ter pedido nada. Só **"Continuar de onde parou"** (ou cancelar/descartar) mexe 
 6. **⚙**: valor padrão de "altura da legenda" e a aparência de "Ajustes avançados" aberto. (Selects **confirmados no original em
    24/11** e já alinhados no clone — ver "Recon de 24/11".)
 7. **Manual**: seletor de cor do balão (não aparece no snap), o que "trocar modelo → clique aqui" realmente abre, e a regra exata
-   de "Falta:" para viral/avatar (ver "Recon de 24/11": uma pendência por vez, ordem dos extras inferida).
+   de "Falta:" para viral/avatar (ver "Recon de 24/11": uma pendência por vez, textos dos extras literais do bundle).
 8. ~~Posição do botão "🎬 Diretor"~~ — confirmada em 24/11: primeiro item do conteúdo, depois da barra "Conectar o Flow".
 9. **Textos cortados em ~200 caracteres nos snaps** (`…`): fim da mensagem "Assisti o viral … Toque n…", descrição do balão
    ("Vale pros lotes que o Diretor montar a partir …") — completei o que o original tem no `zerum-app.js`/`OptionsCard`; o resto é meu.

@@ -5,6 +5,7 @@ import { MAX_BATCH_NAME, MAX_QUANTITY, MAX_VIRAL_BYTES, MAX_VIRAL_MB } from '@/l
 import { PATHS, ROLETA_TOTAL, VARIATIONS, pedidoSummary, type PathId, type VariationId } from '@/lib/domain/plan';
 import { LANGUAGES, balloonLabel, contrastText, sanitizeBatchName, sanitizeWord, type LanguageId } from '@/lib/domain/video-options';
 import { DEFAULT_SETTINGS, type AvatarDTO, type BatchDTO, type SettingsDTO, type VideoOptions, type ViralDTO } from '@/lib/types';
+import { manualFaltas } from '@/lib/domain/manual-falta';
 import { LogPanel } from './LogPanel';
 import { T } from './ui';
 
@@ -84,11 +85,8 @@ export function ManualTab({ virais, avatares, opcoes, onViralEnviado, onAbrirCon
   };
 
   // "ℹ Falta: Qual palavra o público vai comentar? ." — o original (r10-manual) mostra UMA pendência por vez, a palavra primeiro;
-  // viral e avatares só entram na frente quando a palavra já está preenchida (a ordem dos extras é inferida; ver README).
-  const faltas: string[] = [];
-  if (!palavra.trim()) faltas.push('Qual palavra o público vai comentar?');
-  if (!viral) faltas.push('Suba o viral (passo 1)');
-  if (!novos && marcados.length === 0) faltas.push('Marque quem aparece (passo 3)');
+  // viral e avatares só entram na frente quando a palavra já está preenchida (textos literais do bundle).
+  const faltas = manualFaltas({ palavra, viral: viral ?? null, novos, marcados: marcados.length });
 
   const enviarViral = async (f: File | undefined) => {
     if (!f) return;

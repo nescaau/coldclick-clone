@@ -87,3 +87,7 @@ export function sanitizeSubtitle(patch: Partial<SubtitleSettings>, current: Subt
 
 /** "••••1234": só os 4 últimos caracteres da chave aparecem; a chave inteira nunca volta para a tela. */
 export const maskKey = (key: string): string => `••••${key.slice(-4)}`;
+
+/** Nota sob "Imagem" em ⚙ (função "lle" do bundle original): muda conforme o modelo escolhido. */
+export const imageModelNote = (model: string): string =>
+  model === 'Nano Banana Pro' ? 'Melhor rosto.' : model === 'Nano Banana 2' ? 'Equilíbrio entre rosto e velocidade.' : model === 'Nano Banana 2 Lite' ? 'Mais rápido.' : '';
