@@ -49,7 +49,7 @@ import { getViral } from '../repo/virals';
 import type { BatchDTO, EventDTO, VideoDTO } from '../types';
 import { bumpRoleta, getSimConfig } from './settings-service';
 import { executionMode } from './bridge-service';
-import { clipExists, dropVideoFiles, flowFilePath } from './flow-files';
+import { clipExists, dropVideoFiles, flowFilePath, hashesOf } from './flow-files';
 import { PLACEHOLDER_MP4 } from './placeholder-clip';
 import type { ZipEntry } from '../domain/zip';
 import { safeZipName, uniqueNames } from '../domain/zip';
@@ -374,15 +374,19 @@ export function resumeBatch(id: string): BatchDTO {
 /** "↻ Regerar todas as cenas com falha" (ou só um vídeo, com `videoId`): só o que falta é gerado; as cenas prontas ficam. */
 export function retryFailed(batchId: string, videoId?: string): BatchDTO {
   need(batchId);
-  const failed = listVideoRows(batchId).filter((v) => v.state === 'falhou' && (!videoId || v.id === videoId));
-  if (failed.length === 0) throw conflict('Nenhum vídeo com falha para refazer.');
+  const allFailed = listVideoRows(batchId).filter((v) => v.state === 'falhou' && (!videoId || v.id === videoId));
+  if (allFailed.length === 0) throw conflict('Nenhum vídeo com falha para refazer.');
   const simulating = executionMode() === 'simulado';
+  // Com a simulação ligada, um vídeo REAL que já tem cenas baixadas (pagas) NUNCA é convertido em simulado: isso apagaria os
+  // clipes que custaram crédito. Ele fica como está até a simulação ser desligada (aí só as cenas que faltam são geradas).
+  const paidReal = (v: VideoRow) => simulating && v.mode === 'real' && hashesOf(v).length > 0;
+  const failed = allFailed.filter((v) => !paidReal(v));
+  if (failed.length === 0) throw conflict('Esse vídeo já tem cenas reais baixadas do Flow. Para não perder o que foi gasto, desligue a simulação (⚙) e tente de novo: só as cenas que faltam serão geradas.');
   transaction(() => {
     for (const v of failed) {
-      // Um vídeo que falhou no Flow e é refeito com a simulação ligada vira simulado de novo (senão ficaria parado na fila).
+      // Um vídeo que falhou no Flow SEM nenhuma cena baixada e é refeito com a simulação ligada vira simulado (senão ficaria parado na fila).
       // Com a simulação desligada ele continua REAL: as cenas já baixadas ficam, só as que faltam são geradas.
       if (v.mode === 'real' && simulating) {
-        dropVideoFiles(v);
         setVideoReal(v.id, { mode: 'sim', real: '' });
         patchVideo(v.id, { scenesDone: 0 });
       }

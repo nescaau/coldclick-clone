@@ -107,6 +107,7 @@ extensão → página   { zre: 'flow-health', health }                          
 | `rpc` + `action` | relay → service worker | repassa uma das 10 ações da ponte (só de origem autorizada) |
 | `site.hello` | relay → service worker | "esta origem é permitida?" + saúde (para o `flow-health` e as marcas do `<html>`) |
 | `rpc heartbeat` | aba do Flow → service worker | entrega o outbox de eventos, recebe ordens (com *lease*) |
+| `worker.register` | aba do Flow → service worker | registra `workerId` ↔ `sender.tab.id`; "duplicar aba" copia o sessionStorage, então a 2ª aba com o mesmo id recebe um id novo (senão furaria `CONTA_JA_TEM_ABA_EXECUTORA` e dividiria o journal) |
 | `worker.observe` | aba do Flow → service worker | quem está logado, projeto aberto, pronto ou não (e por quê) |
 | `worker.media.{fetch,begin,chunk,end}` | aba do Flow → service worker | entrega o MP4 pronto (o service worker baixa de `flow-content.google`, ou a aba envia em partes se for `blob:`) |
 | `flow.pulse` / `flow.query-info` / `flow.probe` | service worker/popup → aba do Flow | acordar a aba, ler identidade, rodar o diagnóstico |
@@ -131,7 +132,8 @@ queued → dispatched → accepted → completed | failed | unknown
   **nunca** troca de conta ou de modelo para contornar cota; trocar de conta é decisão do app (e só com a "troca
   automática" ligada no ⚙).
 - **Prazos**: presença da conta 90 s · ordem em voo sem sinal do executor 180 s → `unknown` · `unknown` com identificação é
-  reconciliável por 12 min · `unknown` sem identificação libera como falha explícita em 55 s · `queued` que ninguém
+  reconciliável por 12 min **contados a partir do `unknown`** (uma geração `accepted` viva, com a aba mandando progresso,
+  não tem teto de 12 min — só o silêncio de 180 s a derruba para `unknown`) · `unknown` sem identificação libera como falha explícita em 55 s · `queued` que ninguém
   despachou expira em 10 min (seguro refazer) · journal podado após 14 dias.
 
 ## Segurança e privacidade

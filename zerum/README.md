@@ -376,7 +376,7 @@ ter pedido nada. Só **"Continuar de onde parou"** (ou cancelar/descartar) mexe 
 
 ## Testes
 
-`npm test` (vitest, **411 testes** em 31 arquivos; mais 4 testes opcionais, em 2 arquivos, que só rodam com as variáveis
+`npm test` (vitest, **428 testes** em 31 arquivos; mais 4 testes opcionais, em 2 arquivos, que só rodam com as variáveis
 abaixo) cobre:
 
 - **App** (`src/**`): regras puras (opções, Diretor, plano, produção com relógio injetado, análise, MP4 incl. metadados, **junção
@@ -402,6 +402,30 @@ ponta a ponta (Host falso 403, CSRF 403, upload válido 201, corrida de uploads 
 download/Range/zip, falha→regerar, cancelar, avatares, ⚙; ponte: status sem extensão, `.zip` da extensão) e passadas no
 navegador (Diretor com viral → corrigir leitura → plano → Executar → Produção; Manual; Analisados; Vídeos; painéis Avatares e
 ⚙; e, no e2e, o Flow falso gerando um vídeo de 2 cenas que vira **um** MP4 juntado, e a cota 429 pausando a conta).
+
+## Rodada de correções da revisão da fase 3
+
+Tudo sobre a regra central **"nunca cobrar a mesma geração duas vezes"**:
+
+1. **Prazo de 12 min só para `unknown`** (`broker.js`): antes, o `candidateDeadline` era fixado logo depois do clique e derrubava
+   até uma geração `accepted` viva — o `completed` tardio chegava como `LEASE_INVALIDA`, o clipe pago se perdia e "Tentar de
+   novo" cobrava de novo. Agora o prazo só conta a partir de `unknown`; em voo, quem manda é o silêncio da aba (180 s).
+2. **Alerta lido depois do clique não vira `failed`** (`flow-driver.js`): os seletores/`ALERT_RE` são palpite; um alerta lido
+   depois do clique agora é `unknown` (`ENVIO_NAO_CONFIRMADO`), **exceto** recusa conhecida (cota, atividade incomum,
+   créditos, política) que **persiste** `errorPersistMs` (6 s) sem cartão novo — aí é `failed`. Se o cartão aparecer, segue o cartão.
+3. **Consentimento herdado** (migração **v4**): bancos antigos com a simulação desligada (na fase 2 isso não fazia nada) são
+   religados para "simulação" **uma vez**; para gastar crédito de verdade a pessoa precisa desligar de novo, já ciente.
+4. **"Duplicar aba"** (`worker.register`): o service worker registra `workerId ↔ sender.tab.id` e dá um id novo à aba que chega
+   com um id já pertencente a **outra** aba aberta (F5 da mesma aba e aba restaurada mantêm o id).
+
+Nits corrigidos: o relay só empurra `flow-health` (e-mail/projeto) **depois** de `site.hello` responder `allowed`; o "Limpar" do
+popup só apaga ordem **concluída** já lida pelo site (e há 10 min — `DELIVERY_GRACE_MS`), nunca MP4 pago ainda não baixado;
+"↻ Tentar de novo" com a simulação ligada **recusa** (em vez de apagar) um vídeo real que já tem cenas baixadas; e
+`web_accessible_resources` com `use_dynamic_url`.
+
+**Nits pendentes (registrados, não feitos agora):** cobertura de contrato para `job`/`beginAttempt`/`recoverJob`/`mediaState`
+(lado site × extensão); *edit list* (`elst`) na junção de MP4 (A/V com deslocamento inicial); caso de retomada com a foto do
+avatar trocada entre a ordem original e a releitura.
 
 ## Próximos passos / o que ficou pendente
 

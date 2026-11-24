@@ -5,8 +5,9 @@
 import { describe, expect, it } from 'vitest';
 import { fromBase64 } from '../lib/util.js';
 import { MOCK_MP4 } from './mock-page.mjs';
-import { PRESENCE_TTL_MS, QUOTA_PAUSE_MS } from '../lib/protocol.js';
+import { DELIVERY_GRACE_MS, PRESENCE_TTL_MS, QUOTA_PAUSE_MS } from '../lib/protocol.js';
 import { createMockPage } from './mock-page.mjs';
+import { WORKER_KEY, registerWorkerId } from '../content/flow-main.js';
 import { FLOW_CTX, createWorld, sender, videoOrder } from './world.mjs';
 
 const generateClicks = (page) => page.calls.filter((c) => c === 'clickGenerate').length;
@@ -83,6 +84,27 @@ describe('geração de ponta a ponta (mock do Flow)', () => {
   });
 });
 
+describe('popup "Limpar": nunca apaga um MP4 pago que o site ainda não leu', () => {
+  it('concluída e NÃO baixada fica (o download ainda funciona); depois de baixada e da folga, sai', async () => {
+    const world = createWorld();
+    const tab = await ready(world);
+    const q = (await world.rpc('enqueue', videoOrder())).result;
+    await runOnce(tab);
+    expect((await world.rpc('get', { id: q.id })).result.state).toBe('completed');
+    const popup = (m) => world.sw.handleMessage(m, sender.popup());
+
+    world.advance(60_000);
+    expect((await popup({ type: 'popup.prune' })).result).toMatchObject({ removed: 0, kept: 1 });
+    const part = (await world.rpc('download', { id: q.id, part: 0 })).result; // o clipe pago continua lá
+    expect([...fromBase64(part.base64)]).toEqual([...MOCK_MP4]);
+
+    expect((await popup({ type: 'popup.prune' })).result).toMatchObject({ removed: 0, kept: 1 }); // lida agora: ainda dentro da folga
+    world.advance(DELIVERY_GRACE_MS);
+    expect((await popup({ type: 'popup.prune' })).result).toEqual({ removed: 1 });
+    expect((await world.rpc('get', { id: q.id })).error).toBe('ORDEM_NAO_ENCONTRADA');
+  });
+});
+
 describe('falhas: nada é reenviado, e a causa vira código estável', () => {
   it('Flow recusa na hora por cota → failed COTA; a conta fica pausada 24 h e ordens novas são recusadas (retryAt)', async () => {
     const world = createWorld();
@@ -136,6 +158,18 @@ describe('falhas: nada é reenviado, e a causa vira código estável', () => {
     expect((await world.rpc('enqueue', videoOrder({ jobId: 'cena:v2:0', key: 'k2' }))).error).toBe('CONTA_COM_OPERACAO_INCERTA');
   });
 
+  it('alerta passageiro lido depois do clique (palpite) → unknown, NUNCA failed: não libera "Tentar de novo" (evita cobrança dupla)', async () => {
+    const world = createWorld();
+    const tab = await ready(world, { page: createMockPage({ outcomes: [{ kind: 'refuse', error: 'Daily quota exceeded (429)', transient: true }] }) });
+    const q = (await world.rpc('enqueue', videoOrder())).result;
+    await runOnce(tab);
+    const o = (await world.rpc('get', { id: q.id })).result;
+    expect(o.state).toBe('unknown');
+    expect(o.error).toMatch(/^ENVIO_NAO_CONFIRMADO/);
+    expect(generateClicks(tab.page)).toBe(1);
+    expect((await world.rpc('enqueue', videoOrder({ jobId: 'cena:v2:0', key: 'k2' }))).error).toBe('CONTA_COM_OPERACAO_INCERTA');
+  });
+
   it('comando que a extensão não executa → failed COMANDO_NAO_SUPORTADO (sem tocar na página)', async () => {
     const world = createWorld();
     const tab = await ready(world);
@@ -155,6 +189,70 @@ describe('falhas: nada é reenviado, e a causa vira código estável', () => {
     // a aba já não bate com o contexto do pedido: a ordem fica na fila (nunca é despachada para a rota errada)
     expect(['queued', 'failed', 'unknown']).toContain(o.state);
     expect(generateClicks(tab.page)).toBe(0);
+  });
+});
+
+describe('"duplicar aba" copia o sessionStorage: duas abas, mesmo id guardado', () => {
+  const fakeStorage = (id) => {
+    const m = new Map(id ? [[WORKER_KEY, id]] : []);
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) };
+  };
+  const tabSend = (world, tabId) => (m) => world.sw.handleMessage(JSON.parse(JSON.stringify(m)), sender.flow(tabId));
+  const boot = async (world, tabId, storage) => {
+    const id = await registerWorkerId({ storage, send: tabSend(world, tabId), workerId: storage.getItem(WORKER_KEY) });
+    return { id, tab: world.flowTab({ workerId: id, tabId, page: createMockPage() }) };
+  };
+
+  it('a 2ª aba recebe um workerId NOVO (sessionStorage atualizado); a 1ª mantém o seu; só uma opera a conta e os journals não se misturam', async () => {
+    const world = createWorld();
+    world.tabsApi.tabs = [{ id: 7 }, { id: 8 }]; // as duas abas estão abertas
+    const original = fakeStorage('id-copiado');
+    const duplicada = fakeStorage('id-copiado'); // o Chrome copiou o sessionStorage
+    const a = await boot(world, 7, original);
+    const b = await boot(world, 8, duplicada);
+    expect(a.id).toBe('id-copiado');
+    expect(b.id).not.toBe('id-copiado');
+    expect(duplicada.getItem(WORKER_KEY)).toBe(b.id); // o novo id sobrevive a um F5 da aba duplicada
+    expect(original.getItem(WORKER_KEY)).toBe('id-copiado');
+
+    await a.tab.worker.init();
+    await b.tab.worker.init();
+    await a.tab.worker.tick();
+    await b.tab.worker.tick();
+    expect(a.tab.worker.state().standby).toBe(false);
+    expect(b.tab.worker.state().standby).toBe(true); // CONTA_JA_TEM_ABA_EXECUTORA: a duplicata fica de reserva
+    const keys = Object.keys(await world.kv.get(['zr:journal:id-copiado', `zr:journal:${b.id}`]));
+    expect(new Set(keys).size).toBe(2); // cada aba tem o SEU journal
+
+    // a aba original gera normalmente; a duplicata não clica em nada
+    const q = (await world.rpc('enqueue', videoOrder())).result;
+    await runOnce(a.tab);
+    await b.tab.worker.tick();
+    expect((await world.rpc('get', { id: q.id })).result.state).toBe('completed');
+    expect(generateClicks(a.tab.page)).toBe(1);
+    expect(generateClicks(b.tab.page)).toBe(0);
+  });
+
+  it('recarregar a MESMA aba (mesmo tabId) mantém o id — a releitura do que estava em voo continua valendo', async () => {
+    const world = createWorld();
+    world.tabsApi.tabs = [{ id: 7 }];
+    const storage = fakeStorage('id-estavel');
+    expect((await boot(world, 7, storage)).id).toBe('id-estavel');
+    expect((await boot(world, 7, storage)).id).toBe('id-estavel'); // F5
+  });
+
+  it('aba fechada libera o id: reabrir/restaurar uma aba com o mesmo sessionStorage NÃO é tratada como duplicata', async () => {
+    const world = createWorld();
+    world.tabsApi.tabs = [{ id: 7 }];
+    expect((await boot(world, 7, fakeStorage('id-x'))).id).toBe('id-x');
+    world.tabsApi.tabs = [{ id: 9 }]; // a aba 7 foi fechada; a restaurada é a 9
+    expect((await boot(world, 9, fakeStorage('id-x'))).id).toBe('id-x');
+  });
+
+  it('sem resposta do service worker, mantém o id local (nada quebra)', async () => {
+    const storage = fakeStorage('id-local');
+    expect(await registerWorkerId({ storage, send: async () => ({ error: 'EXTENSAO_INDISPONIVEL' }), workerId: 'id-local' })).toBe('id-local');
+    expect(storage.getItem(WORKER_KEY)).toBe('id-local');
   });
 });
 

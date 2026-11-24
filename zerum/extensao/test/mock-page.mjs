@@ -6,7 +6,8 @@
  * O resultado de cada geração é roteirizado: `outcomes` é uma fila — cada clique em "gerar" consome o próximo item:
  *   { kind: 'ready', reads: 2 }              pronto depois de 2 leituras do cartão (padrão)
  *   { kind: 'failed', error: 'quota ...' }   o cartão mostra uma falha
- *   { kind: 'refuse', error: '...' }         recusa NA HORA (toast), sem criar cartão
+ *   { kind: 'refuse', error: '...' }         recusa NA HORA (toast que fica na tela), sem criar cartão
+ *   { kind: 'refuse', error, transient: true } o aviso aparece numa leitura e some (não prova recusa)
  *   { kind: 'silent' }                       clicou e nada aparece (envio não confirmado)
  *   { kind: 'hang' }                         cartão fica "gerando" para sempre
  */
@@ -17,7 +18,7 @@ export const MOCK_PROJECT = '33333333-3333-4333-8333-333333333333';
 export const MOCK_MP4 = Uint8Array.from([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 2, 0, 105, 115, 111, 109, 109, 112, 52, 49, 1, 2, 3, 4, 5, 6, 7, 8]);
 
 export function createMockPage({ email = 'ana@gmail.com', projectId = MOCK_PROJECT, accountPath = '', credits = 500, loggedIn = true, outcomes = [], missing = [], mediaKind = 'url' } = {}) {
-  const state = { email, projectId, accountPath, credits, loggedIn, tiles: [], prompt: '', frame: null, errors: [], seq: 0, outcomes: [...outcomes], missing: new Set(missing) };
+  const state = { email, projectId, accountPath, credits, loggedIn, tiles: [], prompt: '', frame: null, errors: [], sticky: '', seq: 0, outcomes: [...outcomes], missing: new Set(missing) };
   const calls = [];
   const need = (name) => {
     if (state.missing.has(name)) throw new SelectorMissing(name);
@@ -48,6 +49,7 @@ export function createMockPage({ email = 'ana@gmail.com', projectId = MOCK_PROJE
       if (aspectRatio === '9:16') need('aspectPortrait');
       need('outputsOne');
       state.errors = [];
+      state.sticky = '';
     },
     async attachFirstFrame(file) {
       calls.push('attachFirstFrame');
@@ -67,7 +69,9 @@ export function createMockPage({ email = 'ana@gmail.com', projectId = MOCK_PROJE
       need('generateButton');
       const o = state.outcomes.shift() ?? { kind: 'ready', reads: 2 };
       if (o.kind === 'refuse') {
-        state.errors.push(o.error);
+        // `transient`: o aviso aparece numa leitura só e some (palpite fraco). Padrão: fica na tela (recusa de verdade).
+        if (o.transient) state.errors.push(o.error);
+        else state.sticky = o.error;
         return;
       }
       if (o.kind === 'silent') return;
@@ -88,7 +92,7 @@ export function createMockPage({ email = 'ana@gmail.com', projectId = MOCK_PROJE
       return { id, state: 'ready', mediaUrl: mediaKind === 'blob' ? `blob:mock/${id}` : `https://flow-content.google/video/${id}`, mimeType: 'video/mp4' };
     },
     async readErrors() {
-      return state.errors.shift() ?? '';
+      return state.sticky || (state.errors.shift() ?? '');
     },
     /** Só para `blob:` (a aba lê os bytes); URLs https o service worker busca. */
     async mediaBytes(url) {

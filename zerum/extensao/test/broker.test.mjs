@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { BrokerError } from '../background/broker.js';
 import { memoryKv } from '../lib/kv.js';
-import { BROKER_STATES, JOURNAL_RETENTION_MS, LIVE_LIMIT_MS, PRESENCE_TTL_MS, QUEUED_TTL_MS, QUOTA_PAUSE_MS, RECONCILE_TTL_MS, RELOAD_WITHOUT_IDS_TTL_MS, SOFT_PAUSE_MS, TRANSITIONS, canTransition, forbidsResubmit, isTerminal } from '../lib/protocol.js';
+import { BROKER_STATES, DELIVERY_GRACE_MS, JOURNAL_RETENTION_MS, LIVE_LIMIT_MS, PRESENCE_TTL_MS, QUEUED_TTL_MS, QUOTA_PAUSE_MS, RECONCILE_TTL_MS, RELOAD_WITHOUT_IDS_TTL_MS, SOFT_PAUSE_MS, TRANSITIONS, canTransition, forbidsResubmit, isTerminal } from '../lib/protocol.js';
 import { PROJECT_B, beat, ctx, deliverClip, makeEnv, order, videoArgs } from './helpers.mjs';
 
 /** Enfileira e despacha uma ordem; devolve a ordem como a aba a recebe (com `lease`). */
@@ -332,6 +332,37 @@ describe('unknown: incerto nunca vira nova geração', () => {
     expect(await env.broker.get({ id: sent.id })).toMatchObject({ state: 'failed', error: 'CANDIDATOS_NAO_RECONCILIADOS_SEM_REENVIO' });
   });
 
+  it('geração VIVA (accepted, aba mandando progresso) NÃO é derrubada aos 12 min: o `completed` tardio é aceito, sem lease inválida', async () => {
+    const env = makeEnv();
+    const sent = await dispatched(env);
+    await beat(env.broker, { events: [ev(sent, 'accepted', { resume: { tileId: 'tile-lenta', phase: 'gerando' } })] });
+    // 14 min de Flow lento, com a aba acompanhando (progresso a cada 2 min < LIVE_LIMIT_MS)
+    for (let i = 0; i < 7; i++) {
+      env.advance(2 * 60_000);
+      await beat(env.broker, { events: [ev(sent, 'accepted', { resume: { tileId: 'tile-lenta', phase: 'gerando', progress: i } })] });
+    }
+    expect(RECONCILE_TTL_MS).toBeLessThan(14 * 60_000);
+    expect(await env.broker.get({ id: sent.id })).toMatchObject({ state: 'accepted' });
+    expect((await env.broker.get({ id: sent.id })).error).toBeUndefined();
+
+    const clip = await deliverClip(env.media, sent.id);
+    const r = await beat(env.broker, { events: [ev(sent, 'completed', { result: clip })] });
+    expect(r.ack).toHaveLength(1);
+    expect(await env.broker.get({ id: sent.id })).toMatchObject({ state: 'completed', result: { bytes: clip.bytes } });
+  });
+
+  it('o prazo de 12 min conta só a partir do `unknown`: accepted antigo que vira incerto ainda ganha os 12 min inteiros', async () => {
+    const env = makeEnv();
+    const sent = await dispatched(env);
+    await beat(env.broker, { events: [ev(sent, 'accepted', { resume: { tileId: 'tile-1' } })] });
+    env.advance(RECONCILE_TTL_MS - 60_000);
+    await beat(env.broker, { events: [ev(sent, 'unknown', { error: 'ABA_RECARREGADA_SEM_REENVIO', executionFinished: true })] });
+    env.advance(RECONCILE_TTL_MS - 60_000);
+    expect((await env.broker.get({ id: sent.id })).state).toBe('unknown');
+    env.advance(60_000);
+    expect(await env.broker.get({ id: sent.id })).toMatchObject({ state: 'failed', error: 'CANDIDATOS_NAO_RECONCILIADOS_SEM_REENVIO' });
+  });
+
   it('trocar de projeto na mesma aba deixa o que estava em voo INCERTO (ROTA_ALTERADA_RECONCILIAR), sem perder nem repetir', async () => {
     const env = makeEnv();
     const sent = await dispatched(env);
@@ -430,6 +461,33 @@ describe('journal: sobrevive a reinício e protege contra falha de gravação', 
     await expect(env.broker.get({ id: sent.id })).rejects.toMatchObject({ status: 404 });
     expect(await env.media.meta(sent.id)).toBeNull();
     expect((await env.broker.get({ id: live.id })).id).toBe(live.id);
+  });
+
+  it('"Limpar" manual (deliveredOnly): NUNCA apaga MP4 concluído que o site ainda não leu; apaga o já entregue (após a folga) e as falhas', async () => {
+    const env = makeEnv();
+    const a = await dispatched(env); // concluída e NÃO baixada
+    await beat(env.broker, { events: [ev(a, 'completed', { result: await deliverClip(env.media, a.id) })] });
+    const b = await env.broker.enqueue(order({ jobId: 'cena:v2:0', key: 'k2' }));
+    const hb = await beat(env.broker);
+    const bSent = hb.orders.find((x) => x.id === b.id);
+    await beat(env.broker, { events: [ev(bSent, 'completed', { result: await deliverClip(env.media, b.id) })] }); // concluída E baixada
+    await env.broker.markDownloaded({ id: b.id });
+    const c = await env.broker.enqueue(order({ jobId: 'cena:v3:0', key: 'k3' }));
+    const cSent = (await beat(env.broker)).orders.find((x) => x.id === c.id);
+    await beat(env.broker, { events: [ev(cSent, 'failed', { error: 'CONTEUDO_RECUSADO' })] });
+
+    env.advance(1000);
+    // dentro da folga: a baixada também fica; só a falha sai
+    expect(await env.broker.prune({ olderThanMs: 0, deliveredOnly: true })).toEqual({ removed: 1, kept: 2 });
+    env.advance(DELIVERY_GRACE_MS);
+    expect(await env.broker.prune({ olderThanMs: 0, deliveredOnly: true })).toEqual({ removed: 1, kept: 1 });
+    // a não baixada continua lá, com os bytes, e pode ser baixada
+    expect((await env.broker.get({ id: a.id })).state).toBe('completed');
+    expect((await env.media.meta(a.id))?.done).toBe(true);
+    await expect(env.broker.get({ id: b.id })).rejects.toMatchObject({ status: 404 });
+    // e nada de `downloadedAt` vaza na visão pública
+    await env.broker.markDownloaded({ id: a.id });
+    expect(JSON.stringify(await env.broker.get({ id: a.id }))).not.toMatch(/downloadedAt/);
   });
 
   it('mediaState: devolve a conta dona da mídia concluída', async () => {

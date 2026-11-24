@@ -83,6 +83,36 @@ describe('v2 → v3 (fase 3: geração real; append-only, sem perder dados)', ()
   });
 });
 
+describe('v4 (consentimento: simulação religada uma vez)', () => {
+  const simOf = (db: Database.Database) => (db.prepare("SELECT value FROM settings WHERE key = 'simulation'").get() as { value: string } | undefined)?.value;
+
+  it('banco da fase 2 com a simulação DESLIGADA volta ligada: não gera de verdade na fila sem nova confirmação', () => {
+    const db = new Database(':memory:');
+    runMigrations(db, MIGRATIONS.slice(0, 2)); // fase 2
+    db.prepare("INSERT INTO settings (key, value) VALUES ('simulation', 'false'), ('parallel', '3')").run();
+    runMigrations(db, MIGRATIONS);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(4);
+    expect(simOf(db)).toBe('true');
+    expect(db.prepare("SELECT value FROM settings WHERE key = 'parallel'").get()).toEqual({ value: '3' }); // o resto não é tocado
+  });
+
+  it('é só uma vez: depois de migrado, desligar de novo (consentimento do usuário) é respeitado', () => {
+    const db = new Database(':memory:');
+    runMigrations(db, MIGRATIONS.slice(0, 2));
+    db.prepare("INSERT INTO settings (key, value) VALUES ('simulation', 'false')").run();
+    runMigrations(db, MIGRATIONS);
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'simulation'").run();
+    runMigrations(db, MIGRATIONS); // reabrir o app
+    expect(simOf(db)).toBe('false');
+  });
+
+  it('banco novo (sem a chave) segue sem linha — o padrão do app é simulação ligada', () => {
+    const db = new Database(':memory:');
+    runMigrations(db, MIGRATIONS);
+    expect(simOf(db)).toBeUndefined();
+  });
+});
+
 describe('v1 → v2 (append-only, sem perder dados)', () => {
   it('lotes, eventos, virais, avatares e conversas do v1 sobrevivem; colunas novas ganham padrões seguros', () => {
     const db = new Database(':memory:');

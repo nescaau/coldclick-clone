@@ -103,6 +103,42 @@ describe('submitVideo: um clique, e só se tudo estiver certo', () => {
     expect(clicks(page)).toBe(1);
   });
 
+  it('alerta de recusa conhecida que PERSISTE alguns segundos sem cartão novo → failed (créditos, política, incomum, cota)', async () => {
+    const cases = [
+      ['Not enough credits to generate this video', ERROR_CODES.credits],
+      ['This prompt was blocked by our safety policy', ERROR_CODES.policy],
+      ['Unusual activity detected', ERROR_CODES.unusual],
+    ];
+    for (const [text, code] of cases) {
+      const { clock, page, driver } = make({ outcomes: [{ kind: 'refuse', error: text }] });
+      const t0 = clock.t;
+      expect(await caught(driver.submitVideo(spec()))).toMatchObject({ code, state: 'failed' });
+      expect(clock.t - t0).toBeGreaterThanOrEqual(DEFAULTS.errorPersistMs); // não decide na primeira leitura
+      expect(clicks(page)).toBe(1);
+    }
+  });
+
+  it('alerta lido depois do clique que some, ou que é genérico → NUNCA failed: vira unknown (pode ter cobrado)', async () => {
+    // toast passageiro de cota: aparece numa leitura e some, sem cartão
+    const a = make({ outcomes: [{ kind: 'refuse', error: 'Daily quota exceeded (429)', transient: true }] });
+    expect(await caught(a.driver.submitVideo(spec()))).toMatchObject({ code: 'ENVIO_NAO_CONFIRMADO', state: 'unknown', errorText: expect.stringMatching(/quota/i) });
+    expect(clicks(a.page)).toBe(1);
+    // alerta genérico (palpite do seletor) mesmo que fique na tela
+    const b = make({ outcomes: [{ kind: 'refuse', error: 'Algo deu errado' }] });
+    expect(await caught(b.driver.submitVideo(spec()))).toMatchObject({ code: 'ENVIO_NAO_CONFIRMADO', state: 'unknown' });
+    expect(clicks(b.page)).toBe(1);
+  });
+
+  it('alerta lido mas o cartão aparece depois → segue o cartão (o Flow aceitou o pedido)', async () => {
+    const { page, driver } = make();
+    const real = page.snapshotTiles.bind(page);
+    let reads = 0;
+    page.readErrors = async () => 'Daily quota exceeded (429)'; // aviso velho/de outra coisa na tela
+    page.snapshotTiles = async () => (page.calls.includes('clickGenerate') && ++reads < 3 ? [] : real());
+    expect((await driver.submitVideo(spec())).tileId).toBe('tile-1');
+    expect(clicks(page)).toBe(1);
+  });
+
   it('clicou e o cartão não apareceu em 60 s → unknown ENVIO_NAO_CONFIRMADO (pode ter gerado), nunca failed', async () => {
     const { clock, page, driver } = make({ outcomes: [{ kind: 'silent' }] });
     const t0 = clock.t;

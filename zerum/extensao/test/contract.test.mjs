@@ -202,6 +202,7 @@ describe('manifesto (MV3): permissões mínimas e arquivos que os módulos impor
   it('todo módulo que um content script importa (transitivamente) é "web accessible" — senão o import dinâmico falha no Chrome', () => {
     const war = manifest.web_accessible_resources[0];
     expect(war.matches).toEqual(['http://127.0.0.1/*', 'http://localhost/*', 'https://flow.google.com/*']);
+    expect(war.use_dynamic_url).toBe(true); // a URL dos módulos muda por sessão: uma página não consegue sondar "esta pessoa tem a extensão" pelo id fixo
     const covered = (rel) => war.resources.some((pat) => (pat.endsWith('/*.js') ? rel.startsWith(pat.slice(0, -4)) && rel.endsWith('.js') && !rel.slice(pat.length - 4).includes('/') : pat === rel));
     const seen = new Set();
     const walk = (rel) => {

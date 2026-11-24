@@ -39,13 +39,19 @@ export function startSiteRelay({ window, chrome, document = window.document, loc
   const post = (message) => window.postMessage(message, location.origin);
   const pushHealth = (health) => post({ zre: 'flow-health', health: health ?? null });
 
+  // A saúde (e-mail da conta, projeto do Flow) só vai para a página DEPOIS de o service worker confirmar que esta origem é
+  // permitida: uma página local qualquer (outra porta) injetada com o relay não recebe nada, nem por `flow-health`.
+  let allowed = false;
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[STATUS_KEY]) pushHealth(changes[STATUS_KEY].newValue?.health);
+    if (allowed && area === 'local' && changes[STATUS_KEY]) pushHealth(changes[STATUS_KEY].newValue?.health);
   });
-  chrome.storage.local.get(STATUS_KEY).then((s) => pushHealth(s?.[STATUS_KEY]?.health), () => {});
   chrome.runtime
     .sendMessage({ type: 'site.hello' })
-    .then((r) => document.documentElement.setAttribute('data-zerum-extension-origin', r?.result?.allowed ? 'allowed' : 'blocked'))
+    .then((r) => {
+      allowed = !!r?.result?.allowed;
+      document.documentElement.setAttribute('data-zerum-extension-origin', allowed ? 'allowed' : 'blocked');
+      if (allowed) return chrome.storage.local.get(STATUS_KEY).then((s) => pushHealth(s?.[STATUS_KEY]?.health), () => {});
+    })
     .catch(() => {});
 
   window.addEventListener('message', async (e) => {

@@ -519,6 +519,29 @@ describe('convivência com a simulação e limpeza', () => {
     expect(video(b.id)[0]).toMatchObject({ state: 'pronto', simulated: true });
   });
 
+  it('↻ Tentar de novo com a simulação ligada NÃO apaga clipes reais já pagos: recusa e mantém arquivos e estado', () => {
+    m.settings.patchSettings({ simulation: false, parallel: 1 });
+    ready();
+    const b = mkBatch({ scenes: 2 });
+    const w1 = work(claim());
+    const clip = clipBytes();
+    m.real.acceptClip({ videoId: w1.videoId, idx: 0, pumpId: 'p1', orderId: 'o1', mediaRef: 't1', bytes: clip });
+    const w2 = work(claim());
+    m.real.failScene({ videoId: w2.videoId, idx: 1, pumpId: 'p1', orderId: 'o2', code: 'FLOW_FALHOU', message: 'x', kind: 'outro' });
+    const file = m.files.flowFilePath(m.files.storeClip(clip).hash);
+    expect(fs.existsSync(file)).toBe(true);
+
+    m.settings.patchSettings({ simulation: true });
+    expect(() => m.prod.retryFailed(b.id)).toThrow(/desligue a simulação/);
+    expect(fs.existsSync(file)).toBe(true); // o MP4 que custou crédito continua no disco
+    expect(video(b.id)[0]).toMatchObject({ state: 'falhou', scenesDone: 1, simulated: false });
+
+    // desligando a simulação, a retomada aproveita a cena 1 e gera só a que falta
+    m.settings.patchSettings({ simulation: false });
+    m.prod.retryFailed(b.id);
+    expect(work(claim())).toMatchObject({ videoId: w1.videoId, sceneIdx: 1 });
+  });
+
   it('descartar o vídeo/lote apaga os clipes do disco (só os que ninguém mais usa)', () => {
     m.settings.patchSettings({ simulation: false });
     ready();

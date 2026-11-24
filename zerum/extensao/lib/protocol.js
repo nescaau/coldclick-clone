@@ -76,6 +76,12 @@ export const QUEUED_TTL_MS = 10 * 60_000;
 /** Resultados e ordens terminais ficam no journal por este tempo (depois são podados). */
 export const JOURNAL_RETENTION_MS = 14 * 24 * 60 * 60_000;
 
+/**
+ * "Limpar" do popup só apaga ordem CONCLUÍDA depois que o site já leu o MP4 inteiro há pelo menos isto (folga para o envio ao
+ * servidor local e eventuais repetições). Apagar antes faria o site perder o clipe pago: ORDEM_NAO_ENCONTRADA → gerar/cobrar de novo.
+ */
+export const DELIVERY_GRACE_MS = 10 * 60_000;
+
 /** Máximo de ordens em voo por conta (o original permite até 4). */
 export const MAX_IN_FLIGHT = 4;
 

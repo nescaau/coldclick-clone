@@ -15,6 +15,7 @@ import { DEFAULT_ORIGINS, FLOW_ORIGIN, isAllowedMediaUrl, isFlowSender, isPopupS
 
 const PRESENCE_KEY = 'zr:v1:presence';
 const LAST_PRUNE_KEY = 'zr:v1:lastPrune';
+const WORKERS_KEY = 'zr:v1:workers';
 const FRESH_MS = 20_000;
 
 const REASONS = {
@@ -105,6 +106,7 @@ export function createServiceWorker({ kv, chrome = null, now = Date.now, fetchIm
     if (!Number.isInteger(part) || part < 0 || part >= meta.parts) throw new BrokerError('PARTE_INVALIDA', 400);
     const base64 = await media.readPart(id, part);
     if (base64 == null) throw new BrokerError('MIDIA_INCOMPLETA', 500);
+    if (part === meta.parts - 1) await broker.markDownloaded({ id }); // o site leu o clipe até o fim: o "Limpar" já pode apagá-lo
     return { id, mimeType: meta.mimeType, size: meta.size, sha256: meta.sha256, parts: meta.parts, partBytes: PART_BYTES, part, base64, done: part === meta.parts - 1 };
   }
 
@@ -133,6 +135,35 @@ export function createServiceWorker({ kv, chrome = null, now = Date.now, fetchIm
     const email = String(c?.accountId || '').toLowerCase() || `anonimo:${sender.tab?.id ?? 0}`;
     await touchPresence(email, { context: { accountId: String(c?.accountId || ''), projectId: String(c?.projectId || ''), accountPath: String(c?.accountPath || '') }, ready: !!info?.ready, reason: String(info?.reason || ''), tabId: sender.tab?.id });
     return { ok: true };
+  }
+
+  /**
+   * A aba do Flow diz qual `workerId` (guardado no sessionStorage) pretende usar. "Duplicar aba" COPIA o sessionStorage: as duas
+   * abas teriam o mesmo id, furando CONTA_JA_TEM_ABA_EXECUTORA e sobrescrevendo o journal `zr:journal:<id>`. O service worker
+   * registra id → aba (sender.tab.id): se o id já pertence a OUTRA aba que ainda está aberta, devolve um id novo para esta.
+   * Recarregar a mesma aba mantém o id (mesmo tabId) — a releitura do que estava em voo continua funcionando.
+   */
+  async function workerRegister(m, sender) {
+    const worker = typeof m.worker === 'string' ? m.worker.slice(0, 80) : '';
+    if (!worker) throw new BrokerError('WORKER_OBRIGATORIO', 400);
+    const tabId = sender.tab?.id;
+    if (!Number.isInteger(tabId)) return { worker };
+    return serial(async () => {
+      const map = (await kv.get([WORKERS_KEY]))[WORKERS_KEY] ?? {};
+      let open = null;
+      try {
+        open = new Set((await flowTabs()).map((t) => t.id));
+      } catch {
+        /* sem lista de abas: trata como todas abertas (o mais seguro é reatribuir) */
+      }
+      // Abas fechadas liberam o id (reabrir uma aba fechada não deve ser tratado como duplicata).
+      if (open) for (const [w, t] of Object.entries(map)) if (t !== tabId && !open.has(t)) delete map[w];
+      let assigned = worker;
+      if (map[worker] !== undefined && map[worker] !== tabId) assigned = `${worker.slice(0, 36)}-${(uid ?? (() => crypto.randomUUID()))()}`.slice(0, 80);
+      map[assigned] = tabId;
+      await kv.set({ [WORKERS_KEY]: map });
+      return { worker: assigned, reassigned: assigned !== worker };
+    });
   }
 
   async function mediaFetch(m) {
@@ -192,7 +223,8 @@ export function createServiceWorker({ kv, chrome = null, now = Date.now, fetchIm
       return { origins: (await saveSettings({ origins: list })).origins };
     },
     'popup.settings': async (m) => ({ assumeSingleOutput: (await saveSettings({ assumeSingleOutput: !!m.assumeSingleOutput })).assumeSingleOutput }),
-    'popup.prune': async () => broker.prune({ olderThanMs: 0 }),
+    // "Limpar": apaga o que já acabou, MAS nunca um clipe concluído que o site ainda não leu (senão: ORDEM_NAO_ENCONTRADA → cobrança dupla).
+    'popup.prune': async () => broker.prune({ olderThanMs: 0, deliveredOnly: true }),
     'popup.open-flow': async () => {
       const tabs = await flowTabs();
       if (tabs[0]) {
@@ -233,7 +265,7 @@ export function createServiceWorker({ kv, chrome = null, now = Date.now, fetchIm
       }
       if (typeof m.type === 'string' && m.type.startsWith('worker.')) {
         if (!isFlowSender(sender)) throw new BrokerError('ORIGEM_NAO_PERMITIDA', 403);
-        const fn = { 'worker.observe': (x) => observe(x.info, sender), 'worker.media.fetch': mediaFetch, 'worker.media.begin': mediaBegin, 'worker.media.chunk': mediaChunk, 'worker.media.end': mediaEnd }[m.type];
+        const fn = { 'worker.register': (x) => workerRegister(x, sender), 'worker.observe': (x) => observe(x.info, sender), 'worker.media.fetch': mediaFetch, 'worker.media.begin': mediaBegin, 'worker.media.chunk': mediaChunk, 'worker.media.end': mediaEnd }[m.type];
         if (!fn) throw new BrokerError('ACAO_NAO_PERMITIDA', 403);
         return { result: await fn(m) };
       }

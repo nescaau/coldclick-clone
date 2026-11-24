@@ -39,7 +39,8 @@
   "web_accessible_resources": [
     {
       "resources": ["content/site-relay.js", "content/flow-main.js", "content/flow-worker.js", "background/policy.js", "drivers/*.js", "lib/*.js"],
-      "matches": ["http://127.0.0.1/*", "http://localhost/*", "https://flow.google.com/*"]
+      "matches": ["http://127.0.0.1/*", "http://localhost/*", "https://flow.google.com/*"],
+      "use_dynamic_url": true
     }
   ]
 }

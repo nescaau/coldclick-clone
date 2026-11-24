@@ -29,6 +29,8 @@ export class SelectorMissing extends ZerumError {
 export const DEFAULTS = {
   /** Depois do clique, quanto esperar até o cartão novo aparecer na grade. */
   confirmMs: 60_000,
+  /** Recusa conhecida (cota/incomum/créditos/política) lida depois do clique só vale como "failed" se persistir este tempo sem cartão novo. */
+  errorPersistMs: 6_000,
   /** Intervalo entre leituras da grade. */
   pollMs: 3_000,
   /** Quanto esperar o clipe ficar pronto antes de devolver "ainda pendente" (continua reconciliável). */
@@ -89,6 +91,11 @@ export function createFlowDriver({ page, sleep = realSleep, now = Date.now, conf
         clicked = true; // daqui em diante qualquer dúvida é "incerto": o Flow pode ter aceitado o pedido
 
         const t0 = now();
+        // Alerta lido DEPOIS do clique é só um palpite (seletores/ALERT_RE): pode ser de outra coisa, ou o Flow pode ter aceitado o
+        // pedido e cobrado. Por isso vira "incerto" — EXCETO recusa conhecida (cota/atividade incomum/créditos/política) que
+        // PERSISTE por `errorPersistMs` sem aparecer cartão novo: aí é recusa de verdade e é seguro refazer.
+        let refusal = null; // {code, text, since}
+        let lastErrorText = '';
         for (;;) {
           const fresh = (await page.snapshotTiles()).filter((t) => !known.has(t.id));
           if (fresh.length) {
@@ -99,10 +106,16 @@ export function createFlowDriver({ page, sleep = realSleep, now = Date.now, conf
           }
           const err = await page.readErrors();
           if (err) {
-            // O Flow recusou NA HORA: nada foi gerado (nem cobrado).
-            throw new DriverError(errorCodeFromFlowText(err), 'failed', { errorText: err.slice(0, 200) });
+            lastErrorText = err;
+            const code = errorCodeFromFlowText(err);
+            if (code === ERROR_CODES.generic) refusal = null;
+            else if (!refusal || refusal.code !== code) refusal = { code, since: now() };
+            // Recusa conhecida que ficou na tela, sem cartão novo, por alguns segundos: o Flow recusou (nada gerado nem cobrado).
+            if (refusal && now() - refusal.since >= cfg.errorPersistMs) throw new DriverError(code, 'failed', { errorText: err.slice(0, 200) });
+          } else {
+            refusal = null; // sumiu (toast passageiro): não prova recusa
           }
-          if (now() - t0 >= cfg.confirmMs) throw new DriverError('ENVIO_NAO_CONFIRMADO', 'unknown');
+          if (now() - t0 >= cfg.confirmMs) throw new DriverError('ENVIO_NAO_CONFIRMADO', 'unknown', lastErrorText ? { errorText: lastErrorText.slice(0, 200) } : {});
           await sleep(cfg.pollMs);
         }
       } catch (e) {

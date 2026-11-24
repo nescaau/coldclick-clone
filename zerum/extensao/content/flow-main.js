@@ -4,7 +4,24 @@ import { createFlowDriver } from '../drivers/flow-driver.js';
 import { SETTINGS_KEY } from '../lib/protocol.js';
 import { createFlowWorker } from './flow-worker.js';
 
-const WORKER_KEY = 'zerum-flow-worker-v1';
+export const WORKER_KEY = 'zerum-flow-worker-v1';
+
+/**
+ * "Duplicar aba" copia o sessionStorage → dois executores com o mesmo id (furaria CONTA_JA_TEM_ABA_EXECUTORA e as duas abas
+ * sobrescreveriam `zr:journal:<id>`). O service worker conhece a aba (sender.tab.id) e, se o id já é de OUTRA aba aberta,
+ * devolve um id novo; aqui ele é gravado no sessionStorage antes de qualquer journal ou batida. Sem resposta: mantém o local.
+ */
+export async function registerWorkerId({ storage, send, workerId }) {
+  const reg = await send({ type: 'worker.register', worker: workerId });
+  const assigned = reg?.result?.worker;
+  if (typeof assigned !== 'string' || !assigned || assigned === workerId) return workerId;
+  try {
+    storage.setItem(WORKER_KEY, assigned);
+  } catch {
+    /* sem sessionStorage: vale até recarregar */
+  }
+  return assigned;
+}
 
 export async function bootFlowWorker({ window, document, chrome }) {
   if (window.top !== window || window.__zerumFlowWorkerV1) return null; // só o quadro principal; uma vez por aba
@@ -29,6 +46,7 @@ export async function bootFlowWorker({ window, document, chrome }) {
       return { error: 'EXTENSAO_INDISPONIVEL', code: 'EXTENSAO_INDISPONIVEL' }; // extensão recarregada/atualizada: esta aba precisa de F5
     }
   };
+  workerId = await registerWorkerId({ storage: window.sessionStorage, send, workerId });
   const worker = createFlowWorker({ driver, send, storage: chrome.storage.local, workerId, readBlob: (url) => page.mediaBytes(url), locks: window.navigator.locks ?? null });
 
   chrome.runtime.onMessage.addListener((m, sender, reply) => {

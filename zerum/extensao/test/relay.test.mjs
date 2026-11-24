@@ -37,6 +37,16 @@ describe('relay do site', () => {
     expect(responses(win)[0]).toMatchObject({ id: 'a', error: 'ORIGEM_NAO_PERMITIDA', code: 'ORIGEM_NAO_PERMITIDA' });
   });
 
+  it('origem NÃO autorizada não recebe `flow-health` (e-mail/projeto) — nem ao carregar, nem quando a saúde muda', async () => {
+    const { win, chrome, world } = setup({ from: sender.site('http://127.0.0.1:3101/zerum') });
+    await world.kv.set({ [STATUS_KEY]: { health: { state: 'healthy', detail: 'Flow ligado', context: FLOW_CTX() } } });
+    await tick();
+    await chrome.storage.local.set({ [STATUS_KEY]: { health: { state: 'healthy', detail: 'Flow ligado', context: FLOW_CTX() } } });
+    await tick();
+    expect(win.attrs.get('data-zerum-extension-origin')).toBe('blocked');
+    expect(win.posted.filter((p) => p.data.zre === 'flow-health')).toEqual([]);
+  });
+
   it('request → response com o mesmo id (result) e a resposta vai só para a própria origem', async () => {
     const { win } = setup();
     await send(win, { zre: 'request', id: 'abc', action: 'extensionStatus', payload: {} });

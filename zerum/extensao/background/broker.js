@@ -31,6 +31,7 @@ import {
   validContext,
   validateVideoArgs,
   JOURNAL_RETENTION_MS,
+  DELIVERY_GRACE_MS,
 } from '../lib/protocol.js';
 import { ZerumError, clone, createMutex, fingerprint } from '../lib/util.js';
 
@@ -103,7 +104,7 @@ export class Broker {
 
   #view(o) {
     // eslint-disable-next-line no-unused-vars
-    const { fingerprint: _f, lease: _l, worker: _w, ...safe } = o;
+    const { fingerprint: _f, lease: _l, worker: _w, downloadedAt: _d, ...safe } = o;
     const view = clone(safe);
     if (o.state === 'queued') {
       const mine = this.core.orderIds.indexOf(o.id);
@@ -427,7 +428,9 @@ export class Broker {
     if (ev.state === 'accepted') {
       if (o.state === 'dispatched') this.#transition(o, 'accepted', { executionFinished: false });
       else if (o.state === 'accepted') o.executionFinished = !!ev.executionFinished;
-      if (hasIDs(o)) o.candidateDeadline ||= now + RECONCILE_TTL_MS;
+      // NÃO fixa prazo aqui: uma geração viva (com a aba acompanhando e mandando progresso) pode demorar mais de 12 min;
+      // derrubá-la faria o `completed` tardio chegar como lease inválida e "Tentar de novo" cobraria a mesma geração.
+      // O prazo de reconciliação só conta a partir do momento em que a ordem vira `unknown` (o `updated` renova a cada progresso).
       return;
     }
     // Eventos intermediários podem ter sido coalescidos: `dispatched` passa por `accepted` antes de qualquer veredito.
@@ -488,7 +491,8 @@ export class Broker {
     const now = this.now();
     for (const o of Object.values(this.orders)) {
       if (isTerminal(o.state)) continue;
-      if (o.candidateDeadline && now >= o.candidateDeadline) {
+      // O prazo vale só para ordens incertas (`unknown`): em `dispatched`/`accepted` quem manda é o LIVE_LIMIT_MS (último sinal da aba).
+      if (o.state === 'unknown' && o.candidateDeadline && now >= o.candidateDeadline) {
         this.#transition(o, 'failed', { error: 'CANDIDATOS_NAO_RECONCILIADOS_SEM_REENVIO', executionFinished: true, resuming: false });
         touched.add(o.id);
         continue;
@@ -528,19 +532,37 @@ export class Broker {
 
   // ─── manutenção ────────────────────────────────────────────────────────────────────────────────────────────────
 
-  /** Remove do journal ordens TERMINAIS antigas (e os bytes delas). Nada em andamento é tocado. */
-  async prune({ olderThanMs = JOURNAL_RETENTION_MS } = {}) {
+  /** O site leu o MP4 desta ordem até o fim: marca (uma vez) para o "Limpar" saber que o clipe já foi entregue. */
+  async markDownloaded({ id }) {
     return this.#run(async () => {
-      const limit = this.now() - olderThanMs;
-      const gone = Object.values(this.orders).filter((o) => isTerminal(o.state) && (o.updated || o.created) < limit);
-      if (!gone.length) return { removed: 0 };
+      const o = this.orders[id];
+      if (!o || o.state !== 'completed' || o.downloadedAt) return;
+      o.downloadedAt = this.now();
+      await this.#save({ orders: [o.id] });
+    });
+  }
+
+  /**
+   * Remove do journal ordens TERMINAIS antigas (e os bytes delas). Nada em andamento é tocado.
+   * `deliveredOnly` (o "Limpar" manual do popup): uma ordem CONCLUÍDA só sai depois de lida pelo site (DELIVERY_GRACE_MS atrás);
+   * apagar o MP4 pago antes disso faria o site receber ORDEM_NAO_ENCONTRADA e gerar (e cobrar) a mesma cena de novo.
+   */
+  async prune({ olderThanMs = JOURNAL_RETENTION_MS, deliveredOnly = false } = {}) {
+    return this.#run(async () => {
+      const now = this.now();
+      const limit = now - olderThanMs;
+      const delivered = (o) => o.state !== 'completed' || (!!o.downloadedAt && now - o.downloadedAt >= DELIVERY_GRACE_MS);
+      const old = Object.values(this.orders).filter((o) => isTerminal(o.state) && (o.updated || o.created) < limit);
+      const gone = deliveredOnly ? old.filter(delivered) : old;
+      const keptNote = (n) => (n > 0 ? { kept: n } : {}); // quantas concluídas ficaram por ainda não terem sido lidas pelo site
+      if (!gone.length) return { removed: 0, ...keptNote(old.length) };
       for (const o of gone) {
         delete this.orders[o.id];
         await this.media.delete(o.id);
       }
       this.core.orderIds = this.core.orderIds.filter((id) => this.orders[id]);
       await this.#save({ remove: gone.flatMap((o) => [orderKey(o.id), argsKey(o.id)]) });
-      return { removed: gone.length };
+      return { removed: gone.length, ...keptNote(old.length - gone.length) };
     });
   }
 

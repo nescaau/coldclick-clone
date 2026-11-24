@@ -204,4 +204,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE videos ADD COLUMN mode TEXT NOT NULL DEFAULT 'sim';
   ALTER TABLE videos ADD COLUMN real_json TEXT NOT NULL DEFAULT '';
   `,
+
+  /* v4 — consentimento para gastar de verdade.
+       Na fase 2 "simulação desligada" não fazia nada; na fase 3 passou a significar "gerar de verdade no Flow (gasta crédito)".
+       Um banco antigo com a simulação desligada + extensão instalada geraria lotes reais da fila SEM nova confirmação.
+       Por isso a simulação é religada UMA vez aqui; para gerar de verdade o usuário precisa desligá-la de novo, já ciente. */
+  `
+  UPDATE settings SET value = 'true' WHERE key = 'simulation';
+  `,
 ];
