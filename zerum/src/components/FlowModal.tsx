@@ -35,7 +35,7 @@ export function FlowModal({ status, onRetry, onClose }: { status: BridgeStatus |
           <ul className="space-y-1 text-xs text-white">
             {CHECKS.map((c) => (
               <li key={c.chave}>
-                {checklist?.[c.chave] ? '●' : '○'} {c.texto}
+                {checklist?.[c.chave] ? '✓' : '○'} {c.texto}
               </li>
             ))}
           </ul>
@@ -45,12 +45,15 @@ export function FlowModal({ status, onRetry, onClose }: { status: BridgeStatus |
             disabled={tentando}
             onClick={async () => {
               setTentando(true);
-              await onRetry();
-              setTentando(false);
+              try {
+                await onRetry();
+              } finally {
+                setTentando(false);
+              }
             }}
             className={`rounded-xl px-4 py-2 text-sm ${T.botaoClaro}`}
           >
-            Tentar de novo
+            {tentando ? 'Tentando…' : 'Tentar de novo'}
           </button>
         </div>
 

@@ -84,10 +84,9 @@ export function sanitizeWord(raw: string): string {
 /** Texto do balão: COMMENT "PALAVRA" (placeholder quando não há palavra). */
 export const balloonLabel = (word: string): string => `COMMENT "${word.trim().toUpperCase() || 'PALAVRA'}"`;
 
-/** "sem palavra · balão ligado" — resumo mostrado ao lado de "Opções do vídeo". */
-export function optionsSummary(o: Pick<VideoOptions, 'word' | 'batchName' | 'bubbleOn'>): string {
-  const lote = sanitizeBatchName(o.batchName);
-  return `${lote ? `lote "${lote}" · ` : ''}${o.word.trim() ? `palavra "${o.word.trim().toUpperCase()}"` : 'sem palavra'} · balão ${o.bubbleOn ? 'ligado' : 'desligado'}`;
+/** "sem palavra · balão ligado" — resumo mostrado ao lado de "Opções do vídeo" (o original monta só palavra · balão). */
+export function optionsSummary(o: Pick<VideoOptions, 'word' | 'bubbleOn'>): string {
+  return `${o.word.trim() ? `palavra "${o.word.trim().toUpperCase()}"` : 'sem palavra'} · balão ${o.bubbleOn ? 'ligado' : 'desligado'}`;
 }
 
 /** Aplica sanitização/validação em opções parciais vindas da API, sobre as opções atuais. */

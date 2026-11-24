@@ -54,7 +54,13 @@ export function storeViral(input: { name: string; bytes: Uint8Array }): { viral:
     });
     return { viral: toViralDTO(row), reused: false };
   } catch (e) {
-    fs.rmSync(dest, { force: true }); // o banco recusou: não deixa arquivo órfão
+    // Corrida no UNIQUE(hash): outro envio idêntico já tem registro e o MESMO arquivo em disco — não apagar o do vencedor.
+    const winner = getViralByHash(hash);
+    if (winner) {
+      logEvent('viral', winner.id, `"${name}" já estava guardado — reaproveitado (envio simultâneo).`);
+      return { viral: toViralDTO(winner), reused: true };
+    }
+    fs.rmSync(dest, { force: true }); // o banco recusou e ninguém é dono do arquivo: não deixa órfão
     throw e;
   }
 }

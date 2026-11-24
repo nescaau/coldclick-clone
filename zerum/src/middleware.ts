@@ -3,8 +3,8 @@
  * (mesmo padrão do Estúdio Criativo):
  *
  *  - Host allowlist (DNS rebinding): só responde quando o cabeçalho Host é localhost/127.0.0.1/[::1]
- *    (ou um host de ZERUM_ALLOWED_HOSTS).
- *  - CSRF: requisições que ALTERAM dados (POST/PUT/PATCH/DELETE) precisam ser da própria origem —
+ *    (ou um host de ZERUM_ALLOWED_HOSTS). Vale para páginas, RSC e API.
+ *  - CSRF (só /api): requisições que ALTERAM dados (POST/PUT/PATCH/DELETE) precisam ser da própria origem —
  *    `Sec-Fetch-Site` same-origin/none e, quando há `Origin`, igual ao Host.
  *
  * NOTA: aqui NÃO existe sessão/login — a proteção é só "este computador". O original exigia sessão da 001.community.
@@ -34,7 +34,10 @@ export function middleware(req: NextRequest) {
   const host = req.headers.get('host') ?? '';
   if (!allowedHosts().has(hostnameOf(host))) return deny('Host não permitido');
 
-  if (SAFE_METHODS.has(req.method)) return NextResponse.next();
+  // Fora de /api (páginas e RSC) só vale a checagem de Host: ela impede que DNS rebinding leia HTML/RSC.
+  // (req.nextUrl.pathname já vem sem o basePath /zerum.)
+  const isApi = req.nextUrl.pathname === '/api' || req.nextUrl.pathname.startsWith('/api/');
+  if (!isApi || SAFE_METHODS.has(req.method)) return NextResponse.next();
 
   const site = req.headers.get('sec-fetch-site');
   if (site && site !== 'same-origin' && site !== 'none') return deny('Requisição de outra origem bloqueada');
@@ -52,4 +55,8 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: '/api/:path*' };
+/**
+ * Todas as rotas (páginas, RSC e API), exceto os estáticos do Next. Com basePath `/zerum`, o Next prefixa cada matcher:
+ * `/` vira `/zerum` (a página) e o padrão com grupo cobre `/zerum/<qualquer coisa>` — sem o `/` a raiz do app escaparia.
+ */
+export const config = { matcher: ['/', '/((?!_next/static|_next/image).*)'] };

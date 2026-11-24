@@ -4,7 +4,7 @@
  * NESTA FASE só existe o `NullFlowExecutor`: sempre desligado, sem falar com extensão nem rede.
  * A fase futura troca a implementação por uma que usa o protocolo de protocol.ts, sem mexer na UI.
  */
-import { ERR_NO_RESPONSE, type FlowContext } from './protocol';
+import type { FlowContext } from './protocol';
 import type { OperationRecord } from './broker';
 
 export interface BridgeChecklist {
@@ -45,7 +45,11 @@ export interface FlowExecutor {
   reconcile(key: string): Promise<OperationRecord | null>;
 }
 
-export const NOT_READY_DETAIL = ERR_NO_RESPONSE;
+/**
+ * Detalhe do executor nulo. Mesmo padrão `CODIGO; explicação` do original, mas SEM o texto de ERR_NO_RESPONSE
+ * ("pedido preservado…"), que só faz sentido quando há um pedido em andamento — aqui nada foi pedido.
+ */
+export const NOT_READY_DETAIL = 'EXTENSAO_NAO_INSTALADA; o executor do Flow é fase futura, sem pedido pendente';
 
 export class NullFlowExecutor implements FlowExecutor {
   async status(): Promise<BridgeStatus> {

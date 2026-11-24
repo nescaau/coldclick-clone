@@ -26,7 +26,7 @@ conferência de cenas, avatares com foto no Flow.
 ```bash
 cd zerum
 npm install
-npm run dev        # http://127.0.0.1:3100  (redireciona para /zerum)
+npm run dev        # http://127.0.0.1:3100  (redireciona para /zerum); dev/build/start já definem NEXT_TELEMETRY_DISABLED=1
 # produção:
 npm run build && npm run start
 npm run typecheck
@@ -37,8 +37,9 @@ npm test           # vitest
 - Todas as rotas ficam sob **`/zerum`** (`basePath`): página `/zerum`, API `/zerum/api/*`.
 - Dados em `zerum/data/` (ignorado pelo git): banco **`zerum.db`** e pasta **`virais/`**. Troque com `ZERUM_DATA_DIR`
   (ver `.env.example`; tudo é opcional).
-- Defesa de servidor local (`src/middleware.ts`): allowlist de `Host` (DNS rebinding) e checagem de origem em
-  POST/PUT/PATCH/DELETE (CSRF); corpos JSON exigem `application/json`.
+- Defesa de servidor local (`src/middleware.ts`): allowlist de `Host` (DNS rebinding) em **todas** as rotas — páginas, RSC e
+  API (só `_next/static` e `_next/image` ficam de fora) — e, só em `/api`, checagem de origem em POST/PUT/PATCH/DELETE
+  (CSRF); corpos JSON exigem `application/json`.
 - Node ≥ 20.9 (testado em 24). `better-sqlite3` baixa o binário pré-compilado durante o `npm install`; fora isso, zero rede.
 
 ### Por que um app separado (e não rotas dentro do `src/` do irmão)
@@ -70,15 +71,15 @@ rota (src/app/api/**)  →  serviço (src/lib/services/*)  →  repositório (sr
 | **Antigravity** — servidor responde `PRECISA_CONECTAR` até parear por link + código; cota por modelo (`agy/status`, escada de fallback) | **Não existe.** Sem pareamento, sem cota de modelo e sem IA externa: o Diretor é local. O ⚙ mostra "Não existe" para essa trava. |
 | **Código de membro `ZR-XXXX-XXXX-XXXX`** — ação `connect` da ponte trocava a sessão logada pelo código | Removida de `BRIDGE_ACTIONS` (há teste). Pareamento futuro será local. |
 | **Extensão no flow.google.com** exigida para gerar | Não exigida para usar o app. Só a geração real (fase futura) dependerá dela; o banner "Conectar o Flow" diz "Pode usar o Zerum normalmente". |
-| Endpoints do servidor da 001 (`memoria`, `video`, `foto`, `caixa`, `leitura`, `montagem`, `conversas`, `diretor/`, `modelar`, `agy/…`) | Substituídos por rotas locais `/zerum/api/*` sobre SQLite. |
+| Endpoints do servidor da 001 (`memoria`, `video`, `foto`, `caixa`, `leitura`, `montagem`, `conversas`, `agente/`, `diretor/`, `modelar`, `agy/…`) | Substituídos por rotas locais `/zerum/api/*` sobre SQLite. |
 | "Sugestão ou bug" enviava ao servidor da 001 | Só grava em `feedback` no `zerum.db`. |
 | Fontes/React/Tailwind por CDN (`fonts.googleapis.com`, `esm.sh`, `jsdelivr`) | Self-hosted via npm (`@fontsource/*`, Next, Tailwind compilado). Zero requisição externa (verificado no navegador). |
-| Portão de confirmação de cenas (`jev_portao_prompts`) | Não replicado: sem geração, não há cenas. Entra com o executor. |
+| Portão de confirmação de cenas (`jev_portao_prompts`) e confirmação do plano do Diretor (`requer_confirmacao` / `PerguntaPensante`: o plano só executa depois que a aluna confirma) | Não replicados: sem geração não há cenas, e o Diretor local não monta plano com passos — cria o lote direto em `preparando`. Entram com o executor/IA. |
 
 ## Fidelidade visual e textos
 
 Fonte: `reference/zerum-001/001-zerum.snap.txt`, `zerum-index.html` (CSS/markup da casca) e leitura do `zerum-app.js`
-(só estudo — nenhum código copiado; o JSX/CSS foi reescrito). Textos literais, incluindo "Sua palavra da automação",
+(só estudo; o JSX/CSS e a lógica foram reescritos). **Exceção declarada:** `normalizeHex` e `BALLOON_COLORS` (`src/lib/domain/video-options.ts`) reproduzem quase linha a linha as funções `Wr` e `uE` do original — a paleta e a normalização de hex precisam ser idênticas para o contrato de cores. Textos literais, incluindo "Sua palavra da automação",
 "ex.: Umbigo", "MP4 até 60 MB · o Diretor assiste e copia a estrutura", cores `#FFC400 / #22C55E / #EF4444 / #3B82F6 /
 #F65CB4 / #FF7A00 / #FFFFFF / #141414`, "Pedido ao Diretor", etc.
 
@@ -93,6 +94,7 @@ Diferenças deliberadas / observações:
 - **Fonte:** o npm não tem `Google Sans Text`; usa-se `@fontsource/google-sans` na pilha `'Google Sans Text', 'Google Sans', system-ui`
   (a mesma declarada pelo original).
 - **Logo "001"** é um chip em texto (não foram copiados os PNGs da marca); o "Zerinho" do botão de ajuda é um "Z" em círculo.
+- **Painel "Instalar extensão Zerum":** "Instalar extensão Zerum", "Baixar extensão 0.4.17" e "Como instalar" são literais do original (`zerum-index.html`), mas aparecem **sem link** — o clone ainda não tem extensão para baixar. A frase abaixo deles ("A extensão do clone é a fase futura… Nada para instalar agora.") é **reescrita**, assim como os textos de status do painel "Contas Flow" ("Nenhuma conta conectada", "Nenhuma conta: o executor do Flow é fase futura.").
 - **Textos sem fonte literal** (escritos para este clone): estado vazio da aba VÍDEOS, aba MANUAL, aba AVATARES,
   painel ⚙, diálogo "CONECTAR O FLOW" (reaproveita título, status, checklist e `detalhe:` do original; o passo-a-passo
   de instalar a extensão foi trocado por "fase futura"), resposta do Diretor local.
@@ -118,6 +120,8 @@ Desenhado, **não implementado** (`src/lib/bridge/`), a partir da extensão Zeru
 
 ## Testes
 
-`npm test` (vitest, 76 testes): regras puras (opções, Diretor, MP4), protocolo/broker/pílula, migrações (SQLite em
-memória) e serviços sobre um SQLite real em pasta temporária — inclusive um teste que varre o código e falha se
-aparecer import de rede, URL externa ou `fetch` fora do `client.ts`.
+`npm test` (vitest, 84 testes): regras puras (opções, Diretor, MP4), protocolo/broker/pílula, migrações (SQLite em
+memória) e serviços sobre um SQLite real em pasta temporária. `no-network.test.ts` varre `src/**` e `next.config.ts` com o
+parser do TypeScript (comentários não enganam) e falha se aparecer import estático/dinâmico/`require` de módulo de rede,
+URL externa (`https://evil.example.com` é um caso de teste), `WebSocket`/`EventSource`/`XMLHttpRequest`/`sendBeacon` ou
+`fetch` fora do `client.ts`.

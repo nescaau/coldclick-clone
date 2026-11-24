@@ -18,7 +18,7 @@ import {
 } from '../repo/conversations';
 import { getViral, toViralDTO } from '../repo/virals';
 import { listBatchesByConversation } from '../repo/batches';
-import { logEvent } from '../repo/events';
+import { deleteEvents, logEvent } from '../repo/events';
 import { conversationTitle, planRequest, type DirectorMode } from '../domain/director';
 import { DEFAULT_OPTIONS, languageName, mergeOptions, optionsSummary } from '../domain/video-options';
 import { getSavedBalloonColor, saveBalloonColor } from './settings-service';
@@ -61,12 +61,12 @@ export const listAll = (): ConversationSummary[] => listConversations().map(toSu
 
 export function getDetail(id: string): ConversationDetail {
   const row = getConversation(id);
-  if (!row) throw notFound('Conversa');
+  if (!row) throw notFound('Conversa', true);
   return toDetail(row);
 }
 
 export const conversationBatches = (id: string): BatchDTO[] => {
-  if (!getConversation(id)) throw notFound('Conversa');
+  if (!getConversation(id)) throw notFound('Conversa', true);
   return listBatchesByConversation(id);
 };
 
@@ -76,37 +76,55 @@ export function createConversation(input: { mode?: DirectorMode; viralId?: strin
   return toDetail(row);
 }
 
+/** Aplica título/modo/viral/opções (o que vier no patch) a uma conversa. Chamar dentro de transaction(). */
+function applyPatch(id: string, currentOptions: string, patch: z.infer<typeof ConversationPatchSchema>): void {
+  if (patch.title !== undefined) updateConversation(id, { title: patch.title, titleManual: true });
+  if (patch.mode !== undefined) updateConversation(id, { mode: patch.mode });
+  if (patch.viralId !== undefined) {
+    if (patch.viralId !== null && !getViral(patch.viralId)) throw notFound('Viral');
+    updateConversation(id, { viralId: patch.viralId });
+  }
+  if (patch.options !== undefined) {
+    const next = mergeOptions(readOptions(currentOptions), patch.options as Partial<VideoOptions>);
+    updateConversation(id, { options: JSON.stringify(next) });
+    if (patch.options.bubbleColor !== undefined) saveBalloonColor(next.bubbleColor);
+  }
+}
+
 export function patchConversation(id: string, patch: z.infer<typeof ConversationPatchSchema>): ConversationDetail {
   const row = getConversation(id);
-  if (!row) throw notFound('Conversa');
+  if (!row) throw notFound('Conversa', true);
 
-  // "Trocar o viral abre uma conversa nova com ele": com mensagens na conversa, o viral novo vai para uma conversa nova.
+  // "Trocar o viral abre uma conversa nova com ele": com mensagens na conversa, o viral novo vai para uma conversa nova
+  // (a anterior fica como estava). Os DEMAIS campos do mesmo PATCH (título, modo, opções) valem para a conversa nova —
+  // nenhum é descartado em silêncio.
   if (patch.viralId !== undefined && patch.viralId !== null && patch.viralId !== row.viral_id && countMessages(id) > 0) {
     if (!getViral(patch.viralId)) throw notFound('Viral');
-    const fresh = insertConversation({ mode: 'viral', options: row.options, viralId: patch.viralId });
-    logEvent('conversation', fresh.id, 'Conversa aberta com o viral trocado (a anterior ficou como estava).');
-    return toDetail(fresh);
+    const freshId = transaction(() => {
+      const fresh = insertConversation({ mode: 'viral', options: row.options, viralId: patch.viralId });
+      logEvent('conversation', fresh.id, 'Conversa aberta com o viral trocado (a anterior ficou como estava).');
+      const { viralId: _viral, ...rest } = patch;
+      applyPatch(fresh.id, fresh.options, rest);
+      return fresh.id;
+    });
+    return getDetail(freshId);
   }
 
-  transaction(() => {
-    if (patch.title !== undefined) updateConversation(id, { title: patch.title, titleManual: true });
-    if (patch.mode !== undefined) updateConversation(id, { mode: patch.mode });
-    if (patch.viralId !== undefined) {
-      if (patch.viralId !== null && !getViral(patch.viralId)) throw notFound('Viral');
-      updateConversation(id, { viralId: patch.viralId });
-    }
-    if (patch.options !== undefined) {
-      const next = mergeOptions(readOptions(row.options), patch.options as Partial<VideoOptions>);
-      updateConversation(id, { options: JSON.stringify(next) });
-      if (patch.options.bubbleColor !== undefined) saveBalloonColor(next.bubbleColor);
-    }
-  });
+  transaction(() => applyPatch(id, row.options, patch));
   return getDetail(id);
 }
 
 export function removeConversation(id: string): void {
-  if (!getConversation(id)) throw notFound('Conversa');
-  deleteConversation(id);
+  if (!getConversation(id)) throw notFound('Conversa', true);
+  transaction(() => {
+    deleteConversation(id);
+    deleteEvents('conversation', id);
+  });
+}
+
+/** Garante que a conversa existe (usado antes de gravar um upload, para não deixar viral órfão). */
+export function assertConversationExists(id: string): void {
+  if (!getConversation(id)) throw notFound('Conversa', true);
 }
 
 /** Anexa um viral recém-enviado à conversa (usado pelo upload). Mesma regra de "trocar viral" do PATCH. */
@@ -115,7 +133,7 @@ export const attachViral = (conversationId: string, viralId: string): Conversati
 
 export function sendMessage(id: string, input: z.infer<typeof SendMessageSchema>): SendMessageResult {
   const row = getConversation(id);
-  if (!row) throw notFound('Conversa');
+  if (!row) throw notFound('Conversa', true);
   const text = input.text.trim();
   if (!text && input.attachments.length === 0) throw badRequest('Escreva o pedido ao Diretor.');
 

@@ -34,6 +34,8 @@ export const ConversationPatchSchema = z
   })
   .partial();
 
+export const ConversationCreateSchema = z.object({ mode: z.enum(['viral', 'ideia']).optional() });
+
 export const SendMessageSchema = z.object({
   text: z.string().max(MAX_MESSAGE_CHARS),
   /** Nomes dos anexos (📎). Nesta fase só o nome é guardado — o arquivo não é enviado a lugar nenhum. */

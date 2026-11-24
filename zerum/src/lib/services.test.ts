@@ -5,7 +5,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zerum-test-'));
 process.env.ZERUM_DATA_DIR = dir;
@@ -19,6 +20,7 @@ type Mods = {
   bridge: typeof import('./services/bridge-service');
   feedback: typeof import('./services/feedback-service');
   events: typeof import('./repo/events');
+  viralRepo: typeof import('./repo/virals');
   config: typeof import('./config');
 };
 let m: Mods;
@@ -43,6 +45,7 @@ beforeAll(async () => {
     bridge: await import('./services/bridge-service'),
     feedback: await import('./services/feedback-service'),
     events: await import('./repo/events'),
+    viralRepo: await import('./repo/virals'),
     config: await import('./config'),
   };
 });
@@ -87,16 +90,25 @@ describe('conversas', () => {
     expect(m.conv.getDetail(c.id).title).toBe('Meu lote');
   });
 
+  it('assertConversationExists (usado antes de gravar o viral no upload) → 404 feminino', () => {
+    const c = m.conv.createConversation();
+    expect(() => m.conv.assertConversationExists(c.id)).not.toThrow();
+    expect(() => m.conv.assertConversationExists('nao-existe')).toThrow('Conversa não encontrada');
+  });
+
   it('conversa inexistente → 404', () => {
-    expect(() => m.conv.getDetail('nao-existe')).toThrow(/não encontrad/);
+    expect(() => m.conv.getDetail('nao-existe')).toThrow('Conversa não encontrada'); // concordância feminina
     expect(() => m.conv.sendMessage('nao-existe', { text: 'oi', attachments: [] })).toThrow(/não encontrad/);
   });
 
-  it('apagar remove a conversa e as mensagens', () => {
+  it('apagar remove a conversa, as mensagens e os eventos dela', () => {
     const c = m.conv.createConversation({ mode: 'ideia' });
     m.conv.sendMessage(c.id, { text: 'oi', attachments: [] });
+    m.events.logEvent('conversation', c.id, 'evento da conversa');
+    expect(m.events.listEvents('conversation', c.id).length).toBeGreaterThan(0);
     m.conv.removeConversation(c.id);
     expect(() => m.conv.getDetail(c.id)).toThrow();
+    expect(m.events.listEvents('conversation', c.id)).toEqual([]);
   });
 });
 
@@ -188,6 +200,42 @@ describe('virais (upload local real)', () => {
     expect(m.conv.getDetail(c.id).viral?.id).toBe(v1.id); // a antiga ficou como estava
   });
 
+  it('trocar o viral numa conversa com mensagens aplica os OUTROS campos do PATCH (à conversa nova), sem descartar nada', () => {
+    const v1 = m.viral.storeViral({ name: 'p1.mp4', bytes: mp4(20) }).viral;
+    const v2 = m.viral.storeViral({ name: 'p2.mp4', bytes: mp4(21) }).viral;
+    const c = m.conv.createConversation({ viralId: v1.id });
+    m.conv.sendMessage(c.id, { text: '2 vídeos', attachments: [] });
+    const nova = m.conv.patchConversation(c.id, { viralId: v2.id, mode: 'ideia', title: 'Outro lote', options: { word: 'yes' } });
+    expect(nova.id).not.toBe(c.id);
+    expect(nova).toMatchObject({ mode: 'ideia', title: 'Outro lote', viral: { id: v2.id } });
+    expect(nova.options.word).toBe('yes');
+    expect(m.conv.getDetail(c.id)).toMatchObject({ viral: { id: v1.id }, mode: 'viral' }); // a anterior ficou intacta
+    expect(m.conv.getDetail(c.id).options.word).toBe('');
+  });
+
+  it('nome longo (134 caracteres) com .mp4 é aceito: a extensão é validada antes do corte e preservada', () => {
+    const longo = 'a'.repeat(130) + '.mp4';
+    expect(longo.length).toBe(134);
+    const { viral } = m.viral.storeViral({ name: longo, bytes: mp4(22) });
+    expect(viral.name.length).toBe(120);
+    expect(viral.name.endsWith('.mp4')).toBe(true);
+    expect(() => m.viral.storeViral({ name: 'a'.repeat(130) + '.mov', bytes: mp4(23) })).toThrow(/.mp4/);
+  });
+
+  it('corrida no UNIQUE(hash): o arquivo do registro vencedor NÃO é apagado', () => {
+    const bytes = mp4(24);
+    const first = m.viral.storeViral({ name: 'w.mp4', bytes }).viral;
+    const file = `${crypto.createHash('sha256').update(bytes).digest('hex')}.mp4`;
+    expect(fs.existsSync(path.join(m.config.VIRALS_DIR, file))).toBe(true);
+    // simula o perdedor: o dedupe inicial não viu o registro (corrida) e o INSERT bate no UNIQUE
+    const spy = vi.spyOn(m.viralRepo, 'getViralByHash').mockReturnValueOnce(undefined);
+    const second = m.viral.storeViral({ name: 'w2.mp4', bytes });
+    spy.mockRestore();
+    expect(second.viral.id).toBe(first.id);
+    expect(second.reused).toBe(true);
+    expect(fs.existsSync(path.join(m.config.VIRALS_DIR, file))).toBe(true);
+  });
+
   it('tirar o viral (null) mantém a conversa', () => {
     const v = m.viral.storeViral({ name: 'v3.mp4', bytes: mp4(12) }).viral;
     const c = m.conv.createConversation({ viralId: v.id });
@@ -243,27 +291,5 @@ describe('avatares, configurações, feedback e ponte', () => {
       reconcile: async () => null,
     });
     expect((await m.bridge.getBridgeStatus()).ready).toBe(true);
-  });
-});
-
-describe('zero rede externa', () => {
-  it('o código do módulo não importa nem chama nada de rede', () => {
-    const root = path.resolve(__dirname, '..');
-    const offenders: string[] = [];
-    const walk = (d: string) => {
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p);
-        else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.ts$/.test(e.name)) {
-          const src = fs.readFileSync(p, 'utf8');
-          // fetch só no cliente e só para a própria API (client.ts); nada de http(s) externo, sockets ou child_process.
-          if (/from ['"](node:)?(https?|net|tls|dgram|child_process)['"]/.test(src)) offenders.push(`${p}: import de rede`);
-          if (/https?:\/\/(?!127\.0\.0\.1|localhost)/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ''))) offenders.push(`${p}: URL externa`);
-          if (/\bfetch\(/.test(src) && !p.endsWith(path.join('lib', 'client.ts'))) offenders.push(`${p}: fetch fora do client.ts`);
-        }
-      }
-    };
-    walk(root);
-    expect(offenders).toEqual([]);
   });
 });

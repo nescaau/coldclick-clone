@@ -12,6 +12,7 @@ export class AppError extends Error {
   }
 }
 
-export const notFound = (what: string) => new AppError(404, `${what} não encontrado`);
+/** 404 "<coisa> não encontrado/encontrada" — `feminine` ajusta a concordância ("Conversa não encontrada"). */
+export const notFound = (what: string, feminine = false) => new AppError(404, `${what} não encontrad${feminine ? 'a' : 'o'}`);
 export const conflict = (message: string) => new AppError(409, message);
 export const badRequest = (message: string) => new AppError(400, message);

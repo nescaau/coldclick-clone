@@ -149,6 +149,20 @@ export function ContasPanels({ onAtualizar }: { onAtualizar: () => Promise<void>
   return (
     <div className="fixed bottom-3 right-3 z-[60] flex w-[min(20rem,calc(100vw-1.5rem))] flex-col items-end gap-2">
       <details className={`${cx} w-full`}>
+        <summary className="cursor-pointer">Instalar extensão Zerum</summary>
+        <p className="mt-2 text-zinc-300">
+          {/* Textos literais do original; sem link porque o clone ainda não tem extensão para baixar (fase futura). */}
+          <span aria-disabled="true" title="Fase futura: a extensão do clone ainda não existe" className="cursor-not-allowed text-white underline decoration-dotted">
+            Baixar extensão 0.4.17
+          </span>{' '}
+          ·{' '}
+          <span aria-disabled="true" title="Fase futura: a extensão do clone ainda não existe" className="cursor-not-allowed text-white underline decoration-dotted">
+            Como instalar
+          </span>
+        </p>
+        <p className="mt-1 text-zinc-400">A extensão do clone é a fase futura (ponte site ⇄ extensão já desenhada em lib/bridge). Nada para instalar agora.</p>
+      </details>
+      <details className={`${cx} w-full`}>
         <summary className="cursor-pointer">Contas Flow · candidata</summary>
         <div className="mt-2 space-y-2">
           <label className="block">
@@ -191,10 +205,6 @@ export function ContasPanels({ onAtualizar }: { onAtualizar: () => Promise<void>
             {status}
           </p>
         </div>
-      </details>
-      <details className={`${cx} w-full`}>
-        <summary className="cursor-pointer">Instalar extensão Zerum</summary>
-        <p className="mt-2 text-zinc-300">A extensão do clone é a fase futura (ponte site ⇄ extensão já desenhada em lib/bridge). Nada para instalar agora.</p>
       </details>
     </div>
   );

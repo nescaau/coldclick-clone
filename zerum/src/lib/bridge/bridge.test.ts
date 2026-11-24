@@ -10,7 +10,7 @@ import {
   pauseUntil,
 } from './broker';
 import { BRIDGE_ACTIONS, BRIDGE_TIMEOUT_MS, BridgeRequestSchema, BridgeResponseSchema, ERR_NO_RESPONSE, matchResponse } from './protocol';
-import { NullFlowExecutor, pillLabel } from './status';
+import { NOT_READY_DETAIL, NullFlowExecutor, pillLabel } from './status';
 
 describe('protocolo zre', () => {
   it('constantes literais do original', () => {
@@ -88,7 +88,8 @@ describe('estado da ponte', () => {
     const ex = new NullFlowExecutor();
     const st = await ex.status();
     expect(st.ready).toBe(false);
-    expect(st.detail).toBe(ERR_NO_RESPONSE);
+    expect(st.detail).toBe(NOT_READY_DETAIL);
+    expect(st.detail).not.toMatch(/pedido preservado/);
     expect(Object.values(st.checklist).every((v) => v === false)).toBe(true);
     expect(await ex.accounts()).toEqual([]);
     await expect(ex.submit()).rejects.toThrow(/EXECUTOR_INDISPONIVEL/);

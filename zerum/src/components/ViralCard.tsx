@@ -142,7 +142,7 @@ export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArqui
           <span className="text-3xl" aria-hidden="true">
             ⬇️
           </span>
-          <span className="text-lg font-black text-white">{enviando ? 'Guardando o viral…' : 'Arraste o vídeo viral aqui ou clique pra escolher'}</span>
+          <span className="text-lg font-black text-white">{enviando ? 'Guardando o viral…' : arrastando ? 'Solte o vídeo aqui' : 'Arraste o vídeo viral aqui ou clique pra escolher'}</span>
           <span className="text-xs text-zinc-300">
             MP4 até <span>{MAX_VIRAL_MB}</span> MB · o Diretor assiste e copia a estrutura
           </span>

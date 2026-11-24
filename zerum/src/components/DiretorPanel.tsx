@@ -30,7 +30,8 @@ function Intro() {
       O Diretor vê os seus avatares, o lote aberto e os vídeos prontos, e faz por você:{' '}
       <Q>{'"cria uma enfermeira negra de 60 anos e um rapaz de camiseta branca, monta o lote com esse viral e gera 2 vídeos de cada"'}</Q>
       . Ele mostra os passos, você confirma, e a ferramenta executa. Arraste o vídeo viral e diga o que você quer
-      , ou crie a partir da sua ideia (sem viral). Exemplo: <Q>{'"quero esse vídeo igual, 3 vídeos, com pessoas novas"'}</Q>
+      {', ou crie a partir da sua ideia (sem viral). Exemplo: '}
+      <Q>{'"quero esse vídeo igual, 3 vídeos, com pessoas novas"'}</Q>
       . O Diretor assiste ao viral, entende a estrutura dele e escreve as falas sobre o mesmo assunto — nunca cita marca nem produto. Depois é só
       refinar: <Q>{'"troca a abertura"'}</Q>, <Q>{'"faz 20"'}</Q>, <Q>{'"take único"'}</Q>.
     </p>
@@ -98,7 +99,7 @@ export function DiretorPanel(p: Props) {
           </ol>
         )}
 
-        <div role="radiogroup" aria-label="Idioma do vídeo" className="space-y-2">
+        <div role="radiogroup" aria-label="Idioma da fala do vídeo" className="space-y-2">
           <span className={T.rotulo}>IDIOMA DO VÍDEO</span>
           <div className="flex flex-wrap gap-2">
             {LANGUAGES.map((l) => {

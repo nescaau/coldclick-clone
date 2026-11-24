@@ -62,7 +62,10 @@ describe('resumo e balão', () => {
 
   it('optionsSummary: texto literal do original', () => {
     expect(optionsSummary(DEFAULT_OPTIONS)).toBe('sem palavra · balão ligado');
-    expect(optionsSummary({ word: 'yes', batchName: 'Umbigo', bubbleOn: false })).toBe('lote "Umbigo" · palavra "YES" · balão desligado');
+    expect(optionsSummary({ word: 'yes', bubbleOn: false })).toBe('palavra "YES" · balão desligado');
+    // o nome do lote não entra no resumo (o original monta só palavra · balão)
+    const comLote = { ...DEFAULT_OPTIONS, batchName: 'Umbigo' };
+    expect(optionsSummary(comLote)).toBe('sem palavra · balão ligado');
   });
 });
 
