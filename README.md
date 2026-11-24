@@ -1,4 +1,51 @@
-# Estúdio Criativo — réplica local (ColdClick Affiliates)
+# ColdClick clone — dois apps, um repositório
+
+Este repositório contém **dois apps independentes**:
+
+| App | O que é | Porta | Pasta |
+| --- | --- | --- | --- |
+| **Estúdio Criativo** (ColdClick Affiliates) | réplica local do Estúdio Criativo do ColdClick Affiliates, feita para ser alterada com o Claude e repassada aos devs da plataforma original | **3000** | `src/` (código), `data/` (banco), `reference/` |
+| **Zerum 001** | clone completo do **Zerum**, o estúdio da 001.community — **sem login, sem assinatura, sem Antigravity**, com geração real de vídeo pela extensão do Chrome operando o `flow.google.com` na conta do usuário | **3100** | `zerum/` (app próprio, banco próprio) |
+
+Os dois são independentes: banco, código, extensão e dependências separados. Nenhum toca na pasta do outro.
+
+## Como startar cada app
+
+### Estúdio Criativo (porta 3000)
+
+Requisitos: Node.js 20.9+ (recomendado 22 — há `.nvmrc`).
+
+```bash
+npm install
+npm run dev        # http://127.0.0.1:3000
+```
+
+### Zerum 001 (sem login — abre e usa)
+
+Requisitos: **Node.js 24** (via nvm no WSL; o script abaixo cuida disso).
+
+```bash
+bash start-zerum.sh          # http://127.0.0.1:3100/zerum
+```
+
+ou, manualmente:
+
+```bash
+cd zerum
+npm install
+npm run dev                  # http://127.0.0.1:3100/zerum
+```
+
+O `start-zerum.sh` (WSL Linux) carrega o nvm, entra em `zerum/` e sobe o dev na porta 3100 com bind local.
+Documentação completa do Zerum (fluxos, modos de execução, instalação da extensão, fidelidade e divergências
+registradas): **[`zerum/README.md`](zerum/README.md)**.
+
+> ⚠️ Em **nenhum** dos dois apps rode `next build` enquanto o `next dev` estiver ligado na mesma pasta: os dois
+> escrevem em `.next/` e o cache corrompe (tela sem CSS / erro de módulo). Se acontecer, pare o dev, apague `.next/` e suba de novo.
+
+---
+
+## Estúdio Criativo — réplica local (ColdClick Affiliates)
 
 Réplica funcional do **Estúdio Criativo do ColdClick Affiliates**, feita para rodar localmente, ser alterada com o Claude
 e ter as mudanças repassadas aos devs da plataforma original. O código é novo (nada proprietário foi copiado) e a UI é em PT-BR.
