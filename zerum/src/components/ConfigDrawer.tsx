@@ -5,6 +5,7 @@ import { MAX_QUANTITY, MAX_VIRAL_MB } from '@/lib/limits';
 import { ROLETA_TOTAL } from '@/lib/domain/plan';
 import {
   ALT_COLOR_LABEL,
+  BRAIN_OPTIONS,
   IMAGE_MODEL_OPTIONS,
   PARALLEL_OPTIONS,
   SUBTITLE_COLORS,
@@ -287,6 +288,19 @@ export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: ()
             </span>
           </span>
         </label>
+      </section>
+
+      <section aria-label="Inteligência" className="space-y-2">
+        <Titulo>INTELIGÊNCIA</Titulo>
+        <select aria-label="Inteligência" value={s.brain} disabled={!pronto} onChange={(e) => void salvar({ brain: e.target.value })} className={`w-full ${selectCls}`}>
+          {BRAIN_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        {/* Texto do clone (o do original fala de cota do Antigravity e de quem assiste o viral — não vale aqui). */}
+        <Ajuda>Preferência guardada neste computador. Este clone não chama IA (o Diretor é local e sem Antigravity): a escolha só passa a valer quando existir um executor de IA — fase futura.</Ajuda>
       </section>
 
       <section aria-label="Seus limites" className="space-y-2">

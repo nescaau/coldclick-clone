@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_PHOTO_BYTES, photoFileName, sniffImage, validatePhoto } from './avatar';
-import { DEFAULT_SUBTITLE, maskKey, sanitizeSubtitle } from './settings';
+import { BRAIN_OPTIONS, DEFAULT_SUBTITLE, IMAGE_MODEL_OPTIONS, PARALLEL_OPTIONS, maskKey, normalizeBrain, normalizeImageModel, sanitizeSubtitle } from './settings';
 
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
 const JPG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]);
@@ -38,6 +38,21 @@ describe('legenda e chave (⚙)', () => {
     const r = sanitizeSubtitle({ color: 'f65cb4', words: 5, style: 'karaokê', position: 'em cima', size: 999, height: -5, font: 'Anton' }, DEFAULT_SUBTITLE);
     expect(r).toMatchObject({ color: '#F65CB4', words: 5, style: 'karaokê', position: 'em cima', size: 200, height: 0, font: 'Anton' });
     expect(sanitizeSubtitle({ color: 'xyz', words: 7 as never, font: 'Comic Sans' as never }, DEFAULT_SUBTITLE)).toMatchObject({ color: '#FFFF00', words: 3, font: 'Poppins Bold' });
+  });
+
+  it('selects reais do ⚙: simultâneos [1..4], Imagem = 3 nomes reais, INTELIGÊNCIA = 2 opções', () => {
+    expect([...PARALLEL_OPTIONS]).toEqual([1, 2, 3, 4]);
+    expect([...IMAGE_MODEL_OPTIONS]).toEqual(['Nano Banana Pro', 'Nano Banana 2', 'Nano Banana 2 Lite']);
+    expect([...BRAIN_OPTIONS]).toEqual(['Gemini 3.8 Flash (High) (padrão e recomendado)', 'Claude Opus 5.5 (Medium)']);
+  });
+
+  it('normalizeImageModel: "Nano Banana Lite" antigo → "Nano Banana 2 Lite"; desconhecido → Pro; normalizeBrain → Gemini', () => {
+    expect(normalizeImageModel('Nano Banana Lite')).toBe('Nano Banana 2 Lite');
+    expect(normalizeImageModel('Nano Banana 2')).toBe('Nano Banana 2');
+    expect(normalizeImageModel('xyz')).toBe('Nano Banana Pro');
+    expect(normalizeImageModel(undefined)).toBe('Nano Banana Pro');
+    expect(normalizeBrain('Claude Opus 5.5 (Medium)')).toBe('Claude Opus 5.5 (Medium)');
+    expect(normalizeBrain('xyz')).toBe('Gemini 3.8 Flash (High) (padrão e recomendado)');
   });
 
   it('a chave nunca aparece inteira: só os 4 últimos caracteres', () => {

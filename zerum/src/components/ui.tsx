@@ -72,7 +72,8 @@ export const fmtMb = (bytes: number): string => `${(bytes / (1024 * 1024)).toFix
 
 export const fmtDateTime = (iso: string): string => {
   try {
-    return new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    // "11/23, 07:50 PM": formato en-US de 12 h, o mesmo do LOG e do cartão de ANALISADOS do original (r10-analisados).
+    return new Date(iso).toLocaleString('en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   } catch {
     return '';
   }

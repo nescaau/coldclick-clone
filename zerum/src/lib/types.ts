@@ -5,7 +5,7 @@ import type { ViralAnalysis } from './domain/analysis';
 import type { PlanParams, PlanStep } from './domain/plan';
 import type { Gender } from './domain/avatar';
 import type { BatchRunState, SceneState, VideoState } from './domain/production';
-import { DEFAULT_PARALLEL, DEFAULT_SUBTITLE, type SubtitleSettings } from './domain/settings';
+import { DEFAULT_BRAIN, DEFAULT_IMAGE_MODEL, DEFAULT_PARALLEL, DEFAULT_SUBTITLE, type SubtitleSettings } from './domain/settings';
 
 export type { DirectorMode, VideoOptions, LanguageId, ViralAnalysis, PlanParams, PlanStep, Gender, VideoState, SceneState, SubtitleSettings };
 
@@ -139,6 +139,8 @@ export interface SettingsDTO {
   parallel: number;
   /** "Imagem" (modelo de imagem). */
   imageModel: string;
+  /** "INTELIGÊNCIA": preferência de "cérebro" (sem efeito: o Diretor local não chama IA). */
+  brain: string;
   /** "Guardar também uma cópia no projeto do Flow (vídeos até 30 s)". */
   flowCopy: boolean;
   subtitle: SubtitleSettings;
@@ -158,7 +160,8 @@ export const DEFAULT_SETTINGS: SettingsDTO = {
   autoSwitch: false,
   minCredits: 20,
   parallel: DEFAULT_PARALLEL,
-  imageModel: 'Nano Banana Pro',
+  imageModel: DEFAULT_IMAGE_MODEL,
+  brain: DEFAULT_BRAIN,
   flowCopy: true,
   subtitle: DEFAULT_SUBTITLE,
   autoApprove: false,

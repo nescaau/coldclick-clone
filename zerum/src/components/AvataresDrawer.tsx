@@ -149,13 +149,14 @@ export function AvataresDrawer({ avatares, onMudou, onClose }: Props) {
             <span>{avatares.length}</span> <span>AVATARES</span>
           </p>
           {avatares.length === 0 && <p className={`text-sm ${T.textoFraco}`}>Nenhum avatar ainda. Mande a sua foto, gere do zero ou preencha à mão.</p>}
-          <ul className="grid grid-cols-2 gap-3">
+          {/* Densidade do original: ~2 cartões por linha em tela estreita (r4) e 4 em tela larga (r10); foto em pé 9:16. */}
+          <ul className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {avatares.map((a) => {
               const marcado = marcados.has(a.id);
               return (
                 <li key={a.id} className={`overflow-hidden rounded-2xl border ${marcado ? 'border-white' : 'border-white/10'} bg-white/[0.03]`}>
                   <div
-                    className="relative aspect-[3/4] w-full cursor-default bg-black/40"
+                    className="relative aspect-[9/16] w-full cursor-default bg-black/40"
                     onClick={() => multi && alternar(a.id)}
                     role={multi ? 'checkbox' : undefined}
                     aria-checked={multi ? marcado : undefined}

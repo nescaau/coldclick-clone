@@ -1,7 +1,7 @@
 import { getSetting, setSetting, deleteSetting } from '../repo/settings';
 import { DEFAULT_SETTINGS, type SettingsDTO } from '../types';
 import { DEFAULT_BALLOON_COLOR, normalizeHex } from '../domain/video-options';
-import { IMAGE_MODEL_OPTIONS, PARALLEL_OPTIONS, maskKey, sanitizeSubtitle, type SubtitleSettings } from '../domain/settings';
+import { BRAIN_OPTIONS, IMAGE_MODEL_OPTIONS, PARALLEL_OPTIONS, maskKey, normalizeBrain, normalizeImageModel, sanitizeSubtitle, type SubtitleSettings } from '../domain/settings';
 import { ROLETA_TOTAL } from '../domain/plan';
 import type { SimConfig } from '../domain/production';
 import { badRequest } from '../errors';
@@ -16,11 +16,16 @@ export type SettingsPatch = Partial<Omit<SettingsDTO, 'subtitle' | 'apiKeyMasked
 
 export function getSettings(): SettingsDTO {
   const key = getSetting<string>('apiKey', '');
+  // Migração de uma linha: o valor salvo "Nano Banana Lite" (versão anterior) vira o nome real "Nano Banana 2 Lite".
+  const imageRaw = getSetting<string>('imageModel', DEFAULT_SETTINGS.imageModel);
+  const imageModel = normalizeImageModel(imageRaw);
+  if (imageModel !== imageRaw) setSetting('imageModel', imageModel);
   return {
     autoSwitch: getSetting('autoSwitch', DEFAULT_SETTINGS.autoSwitch),
     minCredits: getSetting('minCredits', DEFAULT_SETTINGS.minCredits),
     parallel: getSetting('parallel', DEFAULT_SETTINGS.parallel),
-    imageModel: getSetting('imageModel', DEFAULT_SETTINGS.imageModel),
+    imageModel,
+    brain: normalizeBrain(getSetting('brain', DEFAULT_SETTINGS.brain)),
     flowCopy: getSetting('flowCopy', DEFAULT_SETTINGS.flowCopy),
     subtitle: sanitizeSubtitle(getSetting<Partial<SubtitleSettings>>('subtitle', {}), DEFAULT_SETTINGS.subtitle),
     autoApprove: getSetting('autoApprove', DEFAULT_SETTINGS.autoApprove),
@@ -41,6 +46,10 @@ export function patchSettings(patch: SettingsPatch): SettingsDTO {
   if (patch.imageModel !== undefined) {
     if (!(IMAGE_MODEL_OPTIONS as readonly string[]).includes(patch.imageModel)) throw badRequest('Modelo de imagem desconhecido.');
     setSetting('imageModel', patch.imageModel);
+  }
+  if (patch.brain !== undefined) {
+    if (!(BRAIN_OPTIONS as readonly string[]).includes(patch.brain)) throw badRequest('Inteligência desconhecida.');
+    setSetting('brain', patch.brain);
   }
   if (patch.flowCopy !== undefined) setSetting('flowCopy', patch.flowCopy);
   if (patch.autoApprove !== undefined) setSetting('autoApprove', patch.autoApprove);

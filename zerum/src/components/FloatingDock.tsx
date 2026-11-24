@@ -128,7 +128,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 }
 
 /** Painéis fixos no canto inferior direito: "Instalar extensão Zerum" e "Contas Flow · candidata". */
-export function ContasPanels({ onAtualizar }: { onAtualizar: () => Promise<void> }) {
+export function ContasPanels({ detail, onAtualizar }: { detail: string; onAtualizar: () => Promise<void> }) {
   const [settings, setSettings] = useState<SettingsDTO>(DEFAULT_SETTINGS);
   const [status, setStatus] = useState('');
 
@@ -201,8 +201,9 @@ export function ContasPanels({ onAtualizar }: { onAtualizar: () => Promise<void>
               Usar conta selecionada
             </button>
           </div>
+          {/* O original mostra sempre a linha de status ("EXTENSAO_SEM_RESPOSTA; …"); aqui ela diz o estado real: sem extensão. */}
           <p role="status" className="min-h-4 text-zinc-400">
-            {status}
+            {status || detail}
           </p>
         </div>
       </details>

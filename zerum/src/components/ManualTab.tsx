@@ -83,10 +83,12 @@ export function ManualTab({ virais, avatares, opcoes, onViralEnviado, onAbrirCon
     notes: notas,
   };
 
+  // "ℹ Falta: Qual palavra o público vai comentar? ." — o original (r10-manual) mostra UMA pendência por vez, a palavra primeiro;
+  // viral e avatares só entram na frente quando a palavra já está preenchida (a ordem dos extras é inferida; ver README).
   const faltas: string[] = [];
   if (!palavra.trim()) faltas.push('Qual palavra o público vai comentar?');
-  if (!viral) faltas.push('Suba o viral (passo 1).');
-  if (!novos && marcados.length === 0) faltas.push('Marque quem aparece (passo 3).');
+  if (!viral) faltas.push('Suba o viral (passo 1)');
+  if (!novos && marcados.length === 0) faltas.push('Marque quem aparece (passo 3)');
 
   const enviarViral = async (f: File | undefined) => {
     if (!f) return;
@@ -316,7 +318,7 @@ export function ManualTab({ virais, avatares, opcoes, onViralEnviado, onAbrirCon
 
           {faltas.length > 0 && (
             <p className="text-xs text-white">
-              <span aria-hidden="true">ℹ</span> <b>Falta:</b> {faltas.join(' · ')}
+              <span aria-hidden="true">ℹ</span> <b>Falta:</b> <span>{faltas[0]}</span>.
             </p>
           )}
           {erro && (

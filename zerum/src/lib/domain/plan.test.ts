@@ -74,4 +74,11 @@ describe('buildSteps / rótulos', () => {
   it('PEDIDO do Manual: literal "Igual ao viral · sem variação · 3 vídeos · quem aparece? · Omni 1.1 Flash · Nano Banana Pro (melhor rosto)"', () => {
     expect(pedidoSummary({ ...base, quantity: 3 }, [], 'Nano Banana Pro')).toBe('Igual ao viral · sem variação · 3 vídeos · quem aparece? · Omni 1.1 Flash · Nano Banana Pro (melhor rosto)');
   });
+
+  it('PEDIDO: "(melhor rosto)" só no Pro, "(rápido)" no 2 Lite e Nano Banana 2 sem sufixo', () => {
+    const fim = (m: string) => pedidoSummary({ ...base, quantity: 1 }, [], m).split(' · ').slice(-2).join(' · ');
+    expect(fim('Nano Banana Pro')).toBe('Omni 1.1 Flash · Nano Banana Pro (melhor rosto)');
+    expect(fim('Nano Banana 2')).toBe('Omni 1.1 Flash · Nano Banana 2');
+    expect(fim('Nano Banana 2 Lite')).toBe('Omni 1.1 Flash · Nano Banana 2 Lite (rápido)');
+  });
 });

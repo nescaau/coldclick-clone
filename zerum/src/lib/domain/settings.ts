@@ -6,7 +6,24 @@ import { normalizeHex } from './video-options';
 
 export const PARALLEL_OPTIONS = [1, 2, 3, 4] as const;
 export const DEFAULT_PARALLEL = 4;
-export const IMAGE_MODEL_OPTIONS = ['Nano Banana Pro', 'Nano Banana 2', 'Nano Banana Lite'] as const;
+/** Selects reais do ⚙ (r11-config.snap.txt): "Imagem" = estes 3 nomes, nesta ordem. */
+export const IMAGE_MODEL_OPTIONS = ['Nano Banana Pro', 'Nano Banana 2', 'Nano Banana 2 Lite'] as const;
+export const DEFAULT_IMAGE_MODEL: (typeof IMAGE_MODEL_OPTIONS)[number] = 'Nano Banana Pro';
+
+/** Valor salvo na versão anterior deste clone ("Nano Banana Lite", sem o "2") → nome real. Qualquer outro valor desconhecido volta ao padrão. */
+export const normalizeImageModel = (v: unknown): string =>
+  v === 'Nano Banana Lite' ? 'Nano Banana 2 Lite' : (IMAGE_MODEL_OPTIONS as readonly unknown[]).includes(v) ? (v as string) : DEFAULT_IMAGE_MODEL;
+
+/** Sufixo do modelo de imagem no "PEDIDO": só o Pro leva "(melhor rosto)", o 2 Lite leva "(rápido)" e o Nano Banana 2 vai sem sufixo. */
+export const imageModelSuffix = (model: string): string => (model === 'Nano Banana Pro' ? ' (melhor rosto)' : model === 'Nano Banana 2 Lite' ? ' (rápido)' : '');
+
+/**
+ * "INTELIGÊNCIA" (⚙): as duas opções literais do original. Neste clone é só uma PREFERÊNCIA guardada ("cérebro" local):
+ * o Diretor é local e não chama IA nenhuma (sem Antigravity), então a escolha ainda não muda nada.
+ */
+export const BRAIN_OPTIONS = ['Gemini 3.8 Flash (High) (padrão e recomendado)', 'Claude Opus 5.5 (Medium)'] as const;
+export const DEFAULT_BRAIN: (typeof BRAIN_OPTIONS)[number] = BRAIN_OPTIONS[0];
+export const normalizeBrain = (v: unknown): string => ((BRAIN_OPTIONS as readonly unknown[]).includes(v) ? (v as string) : DEFAULT_BRAIN);
 
 /** Cores da palavra em destaque (ordem literal do snap). `#FFFF00` = Amarelo padrão da legenda. */
 export const SUBTITLE_COLORS = [

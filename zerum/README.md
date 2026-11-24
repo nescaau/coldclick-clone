@@ -20,7 +20,7 @@ Estúdio Criativo (`src/`, `data/`, `reference/`).
 | **Produção** | cartões de lote → vídeos → **cenas** com progresso, estados `na fila / gerando / PRONTO / FALHOU / cancelado / parado`, **Parar depois dos atuais**, **Continuar de onde parou**, **✕ Cancelar agora (2º clique)**, **↻ Regerar todas as cenas com falha**, **Baixar todos os prontos (zip)**, **✓ Aprovar lote → Vídeos**, **✕ Descartar lote (2º clique)**, log em tempo real (eventos persistidos) |
 | **Vídeos** | "MEUS VÍDEOS": só os prontos, por lote (mais novo primeiro), com player e **⬇ Baixar MP4** (`Nome_12345.mp4`, código diferente em cada vídeo do lote) |
 | **Avatares** | painel lateral com biblioteca: foto (JPG/PNG/WEBP ≤ 20 MB validada pelo conteúdo, `data/avatares/<sha256>.<ext>`) ou "Sem foto", criar/editar (lápis)/remover com diálogo de confirmação, **Selecionar vários** (apagar com 2º clique), **⬇ Baixar todos (zip)**, ✨ Gerar 1/4 (cartões sem foto) |
-| **⚙ Configuração** | painel lateral conforme o original: Geração (simultâneos, imagem, cópia no Flow), **Legenda** (cor, ajustes avançados, ★ padrão), **Aprovação**, Seus limites, chave própria — tudo **persistido em SQLite** |
+| **⚙ Configuração** | painel lateral conforme o original: Geração (simultâneos, imagem, cópia no Flow), **Legenda** (cor, ajustes avançados, ★ padrão), **Aprovação**, **Inteligência** (só preferência — ver "Recon de 24/11"), Seus limites, chave própria — tudo **persistido em SQLite** |
 | **Ponte site⇄extensão** | **apenas interfaces** em `src/lib/bridge/` (protocolo `zre`, broker, executor nulo) — inalterado |
 
 Fora de escopo (fase futura): gerar vídeo/imagem de verdade, extensão do Chrome, leitura do viral por IA, roteirização por
@@ -95,7 +95,7 @@ rota (src/app/api/**)  →  serviço (src/lib/services/*)  →  repositório (sr
 | --- | --- |
 | **Sessão 001.community** (`na("ingresso", …)`, 401, bloqueio de acesso) | **Não existe.** Proteção só de "este computador" (`127.0.0.1` + Host/origem) |
 | **Assinatura** (app desktop "entre com o e-mail da sua assinatura") | Faixa "NOVO ZERUM — baixar instalador" **não reproduzida** (propaganda do instalador pago) |
-| **Antigravity** (`PRECISA_CONECTAR`, cota por modelo) | **Não existe.** Sem IA externa; o Diretor é local. No ⚙ somem a linha "Antigravity / Desconectar", **INTELIGÊNCIA** (Gemini/Claude) e as cotas **ANTIGRAVITY** de "SEUS LIMITES" |
+| **Antigravity** (`PRECISA_CONECTAR`, cota por modelo) | **Não existe.** Sem IA externa; o Diretor é local. No ⚙ somem a linha "Antigravity / Desconectar" e as cotas **ANTIGRAVITY** de "SEUS LIMITES". **INTELIGÊNCIA** existe só como **preferência local sem efeito** ("cérebro"), com as 2 opções literais (ver "Recon de 24/11") |
 | **Código de membro `ZR-…`** / MCP | Removido (`connect` fora de `BRIDGE_ACTIONS`). A seção **"CONECTAR A SUA IA (MCP)"** do ⚙ **não foi reproduzida**: depende do servidor da 001 e o próprio original diz que está desligado |
 | **Extensão no flow.google.com** exigida | Não exigida para usar o app (o banner diz "Pode usar o Zerum normalmente") |
 | Endpoints do servidor da 001 | Substituídos por rotas locais `/zerum/api/*` sobre SQLite |
@@ -111,6 +111,45 @@ snaps não mostram — cartão de lote, 2º clique, plano, formulário "Alterar 
 reescritos); (3) `001-zerum.snap.txt` e `zerum-index.html` (casca). **Exceção declarada:** `normalizeHex` e `BALLOON_COLORS`
 reproduzem quase linha a linha as funções `Wr`/`uE` do original (a paleta e o hex precisam ser idênticos).
 
+### Recon de 24/11 (conta real do Henrique: 5 avatares, 1 viral, LOG real)
+
+Capturas `r10-producao/videos/analisados/manual`, `r11-config`, `r4-avatares` (+ shots) — **autoridade máxima**, acima dos
+snaps de 23/11. O que mudou no clone por causa delas:
+
+- **Selects do ⚙** (reais): "Vídeos simultâneos" = `[1,2,3,4]`; "Imagem" = **Nano Banana Pro / Nano Banana 2 / Nano Banana 2
+  Lite** (o terceiro era `Nano Banana Lite`: corrigido; o valor já salvo é migrado em `getSettings()` — uma linha em
+  `settings-service.ts`, coberta por teste); **INTELIGÊNCIA** = "Gemini 3.8 Flash (High) (padrão e recomendado)" / "Claude Opus
+  5.5 (Medium)".
+- **"PEDIDO"** (Manual): `… · Omni 1.1 Flash · <imagem><sufixo>` — `(melhor rosto)` só no Pro, `(rápido)` no 2 Lite, Nano Banana 2
+  sem sufixo. Modelo de vídeo padrão **Omni 1.1 Flash**; o diálogo "Modelo de vídeo padrão" (💡 + "clique aqui" + ✕ Fechar) já
+  existia, só o texto literal, sem modelos alternativos — "clique aqui" **abre o ⚙** (o que o original abre ali continua
+  desconhecido; o clone só tem esse modelo).
+- **"Falta:"** agora é `ℹ Falta: Qual palavra o público vai comentar? .` (o ponto final é um nó separado no original) e mostra
+  **uma pendência por vez**. Evidência: no snap o viral não estava escolhido e nenhum avatar marcado, e mesmo assim só a palavra
+  aparece. A ordem dos extras do clone (viral → avatares, depois da palavra) é **inferência minha**.
+- **ANALISADOS**: data no formato en-US `11/23, 07:50 PM` (`fmtDateTime`, vale p/ todo o app), meta só `32 s · data` (saiu o
+  enquadramento), Gancho/Estrutura cortados em **200** caracteres + `...` (medido: os dois trechos do snap têm exatamente 200).
+- **Avatares**: foto em pé **9:16**; grade de **2 colunas** em tela estreita (r4, ~930 px) e **4** em tela larga (r10, ~1900 px) —
+  o ponto de troca (`xl` = 1280 px) é palpite. **Divergência do briefing:** os botões reais são `✨ Gerar 1`/`✨ Gerar 4`, `☑ Selecionar
+  vários` e `👤 Mesma pessoa, outro visual` / `👥 Pessoa nova parecida` (o 🎲 só existe em `🎲 3 avatares novos`, no Manual) — mantive os
+  literais dos snaps.
+- **Já estavam corretos** (conferidos de novo, nada a mudar): textos de PRODUÇÃO vazia, VÍDEOS ("MEUS VÍDEOS" + vazio), Manual
+  (passo 3, balão desligado, "observações", `quantos vídeos` como spinbutton, botão GERAR e a frase abaixo), "🎬 Diretor" em todas as
+  abas menos DIRETOR, seções APROVAÇÃO e "SEUS LIMITES → CRÉDITOS DO FLOW".
+- **INTELIGÊNCIA — decisão:** o clone **reproduz o select** (2 opções literais, persistido em `settings.brain`, validado), mas como
+  **preferência sem efeito**: o Diretor é local e não chama IA. A nota do original ("Gemini = mais rápido… Quem assiste o viral é
+  sempre o Gemini") fala de cota do Antigravity e seria falsa aqui, então o clone mostra um texto próprio dizendo isso. **Omitidos
+  de propósito:** linha "Antigravity <e-mail> / Desconectar", cotas ANTIGRAVITY ("Gemini 99% · volta hoje às 03:03" etc.) e toda a
+  seção **MCP** (o próprio original a marca como desligada).
+- **Barra "Conectar o Flow" — reconciliação:** texto, estrutura e botão "Conectar agora →" do clone **já eram idênticos** ao
+  original. A diferença está no estado: o painel "Contas Flow · candidata" do original mostra sempre a linha de status
+  `EXTENSAO_SEM_RESPOSTA; pedido preservado, não gerar outra vez` (extensão instalada, sem resposta). O clone não tem extensão,
+  então mostra o estado verdadeiro `EXTENSAO_NAO_INSTALADA; …` (agora **também no painel**, antes só no diálogo "CONECTAR O FLOW";
+  clicar em "Atualizar contas" troca por "Nenhuma conta…"). O código `EXTENSAO_SEM_RESPOSTA` continua em `bridge/protocol.ts` para
+  quando houver executor. Painel "Instalar extensão" no original tem links reais (0.4.18/INSTALAR.txt); no clone são rótulos
+  desativados.
+- **Endereço MCP pessoal (`ZR-…`)** do `r11-config.snap.txt` **não foi copiado** para código nem para este README.
+
 ### Conferência item-a-item (script `grep` contra os snaps)
 
 Foram feitas **584 verificações** (literais extraídos dos 7 snaps) e procurados no código (`src/**`, normalizando espaços/JSX): Manual 98 · Produção
@@ -121,8 +160,8 @@ Foram feitas **584 verificações** (literais extraídos dos 7 snaps) e procurad
   `Cor <nome>` (aria-label gerado), `5 palavras`, o resumo `PEDIDO · …` (montado; coberto por teste com a frase literal);
 - **da casca da 001, não do Zerum**: `🖥️ NOVO ZERUM…`, `Avisos, alt+T`, menu lateral, usuário logado;
 - **dados de exemplo da conta capturada**: viral `REF_IA_76M_BEBIDA_32s`, avatares `PF 1`/`PERFIL n`, e-mail, endereço MCP, horários;
-- **omitidos de propósito** (Antigravity/MCP — ver "Travas"): `Desconectar`, **INTELIGÊNCIA** + o texto do Gemini, cotas
-  **ANTIGRAVITY** ("Gemini 100% · volta 24/11 às 03:03"), toda a seção **MCP**;
+- **omitidos de propósito** (Antigravity/MCP — ver "Travas" e "Recon de 24/11"): `Desconectar`, a **nota** de INTELIGÊNCIA do
+  Gemini (o select existe), cotas **ANTIGRAVITY** ("Gemini 99% · volta hoje às 03:03"), toda a seção **MCP**;
 - **pílula** `○ CONTAS FLOW`: o clone usa `○ sem Flow · clique pra reconectar` (pedido do dono); `PILL_MODE = 'contas'` em
   `FloatingDock.tsx` troca.
 
@@ -149,13 +188,13 @@ e o clone precisa **dizer a verdade** sobre o que é local:
   `✕ Confirmar: cancelar "…"?`, "↻ Regerar todas as cenas com falha (N)", "Baixar todos os prontos (N)", "✓ Aprovar lote →
   Vídeos", "✕ Descartar lote", "⬇ Baixar MP4", "↻ Tentar de novo", o aviso de 2º clique, a mensagem "O Google não conseguiu terminar
   esta cena…".)
-- **Manual**: itens extras de "Falta:" ("Suba o viral (passo 1).", "Marque quem aparece (passo 3)."); "Guardando o viral…". (Os
+- **Manual**: itens extras de "Falta:" ("Suba o viral (passo 1)", "Marque quem aparece (passo 3)"); "Guardando o viral…". (Os
   chips "usar este" / "✓ base do lote" são literais do `zerum-app.js`.)
 - **Avatares**: avisos de "fase futura" (variações, galeria do Flow, ✨ Gerar sem foto); "Sem foto"; "SEXO?"; "Nenhum avatar ainda.
   Mande a sua foto, gere do zero ou preencha à mão."; diálogo de apagar ("Apagar "X"? A foto sai só deste computador…") e os
   títulos/rótulos do formulário do lápis; "Escolha se a pessoa é mulher ou homem…" e "Isso não é uma foto. Mande JPG, PNG ou WEBP."
   (**adaptados**: o original aceita HEIC; aqui não).
-- **⚙**: linha "Zerum local — sem login · sem assinatura · sem Antigravity"; bloco "Simulação local da geração" e "Teste de falha";
+- **⚙**: nota da INTELIGÊNCIA ("Preferência guardada neste computador. Este clone não chama IA…"); linha "Zerum local — sem login · sem assinatura · sem Antigravity"; bloco "Simulação local da geração" e "Teste de falha";
   as linhas locais de "SEUS LIMITES" (VIRAL, LOTE, ROLETA); o texto da chave ("guardada · ••••1234", "Só pra quem ainda usa o modo
   antigo… Aqui ela só fica guardada neste computador — não é testada nem enviada"); "Padrão salvo: …". (Título "Diretor (modo
   antigo, chave própria)", "Apagar chave" e "Chave apagada." são literais do `zerum-app.js`.)
@@ -179,7 +218,8 @@ e o clone precisa **dizer a verdade** sobre o que é local:
 - **Lote v1 migrado entra PARADO**: texto do log "Lote de versão anterior atualizado: … Ele fica PARADO — nada é gerado sem você
   pedir…" (ver "Migração de lotes da v1").
 - **Casca**: texto do painel "Precisando de ajuda?", do diálogo "CONECTAR O FLOW" (passo-a-passo trocado por "fase futura") e
-  dos painéis "Contas Flow"/"Instalar extensão" (os títulos são literais; a frase de status é reescrita).
+  dos painéis "Contas Flow"/"Instalar extensão" (os títulos são literais; a frase de status é reescrita — o código
+  `EXTENSAO_NAO_INSTALADA; …` é do clone, o original mostra `EXTENSAO_SEM_RESPOSTA; …`).
 
 ### Migração de lotes da v1 (decisão registrada)
 
@@ -194,28 +234,28 @@ ter pedido nada. Só **"Continuar de onde parou"** (ou cancelar/descartar) mexe 
 1. **Cartão de lote em PRODUÇÃO com um lote rodando** (layout, ordem dos botões, "etapa" por vídeo, cenas, "Regerar cena"): só
    havia o estado vazio nos snaps; o cartão foi montado a partir do `zerum-app.js`.
 2. **Cartão do plano no DIRETOR** (`requer_confirmacao`): layout/aspecto reais do "Plano" com "Executar N passos".
-3. **Cartão de viral em ANALISADOS com dados** (miniatura, "Usar no Diretor", ▶ Assistir, ⬇ Baixar): só o estado "carregando…".
-4. **Lápis e lixeira do avatar** (formulário e confirmação de apagar), **"Mesma pessoa, outro visual" / "Pessoa nova parecida"**,
-   **"Selecionar vários"** em uso, e a **grade** (o original mostra ~4 cartões estreitos por linha; o clone usa 2).
-5. **Aba VÍDEOS com vídeos** (cartões, versões "v2", botão **Editar**) — o **editor "Editar" não foi implementado**.
-6. **⚙**: valor padrão de "altura da legenda" e a aparência de "Ajustes avançados" aberto. (Os selects estão **confirmados no
-   `zerum-app.js`**: "Vídeos simultâneos" = `[1,2,3,4]`; "Imagem" = `🍌 Nano Banana Pro` (rótulo "Nano Banana Pro (melhor
-   rosto)"), `🍌 Nano Banana 2` e `🍌 Nano Banana 2 Lite` (rótulo "🍌 Nano Banana 2 Lite (rápido)"). **Divergência conhecida do
-   clone:** `IMAGE_MODEL_OPTIONS` ainda guarda o terceiro modelo como `Nano Banana Lite` (sem o "2" e sem "(rápido)"); alinhar
-   exige migrar o valor já salvo em `settings` — fica para a próxima rodada.)
+3. ~~Cartão de viral em ANALISADOS~~ — **resolvido em 24/11** (r10-analisados: miniatura, meta, Gancho/Estrutura, 4 botões).
+   Ainda sem captura: o aspecto do botão "Apagar" no 2º clique e o modal de "▶ Assistir".
+4. **Lápis e lixeira do avatar** (formulário e confirmação de apagar) e **"Selecionar vários"** em uso: só o estado fechado foi
+   capturado. A **grade** foi calibrada em 24/11 (ver "Recon de 24/11"); os botões "Mesma pessoa/Pessoa nova" existem em cada
+   cartão mas só mostram o aviso de fase futura.
+5. **Aba VÍDEOS com vídeos** (cartões, versões "v2", botão **Editar**) — o **editor "Editar" não foi implementado**; a conta
+   capturada tinha 0 vídeos.
+6. **⚙**: valor padrão de "altura da legenda" e a aparência de "Ajustes avançados" aberto. (Selects **confirmados no original em
+   24/11** e já alinhados no clone — ver "Recon de 24/11".)
 7. **Manual**: seletor de cor do balão (não aparece no snap), o que "trocar modelo → clique aqui" realmente abre, e a regra exata
-   de "Falta:" (no snap só aparece a palavra, mesmo sem viral/avatar).
-8. **Posição/papel do botão "🎬 Diretor"** nas abas fora do Diretor (aparece no snap, sem captura visual).
+   de "Falta:" para viral/avatar (ver "Recon de 24/11": uma pendência por vez, ordem dos extras inferida).
+8. ~~Posição do botão "🎬 Diretor"~~ — confirmada em 24/11: primeiro item do conteúdo, depois da barra "Conectar o Flow".
 9. **Textos cortados em ~200 caracteres nos snaps** (`…`): fim da mensagem "Assisti o viral … Toque n…", descrição do balão
    ("Vale pros lotes que o Diretor montar a partir …") — completei o que o original tem no `zerum-app.js`/`OptionsCard`; o resto é meu.
 10. **Responsivo/largura** dos painéis laterais (usei `26rem`).
 
 ## Testes
 
-`npm test` (vitest, **167 testes**, 14 arquivos): regras puras (opções, Diretor, plano, produção com relógio injetado, análise,
+`npm test` (vitest, **172 testes**, 14 arquivos): regras puras (opções, Diretor, plano, produção com relógio injetado, análise,
 MP4 incl. metadados, zip com CRC, avatar/⚙, Range/Content-Disposition), protocolo/broker/pílula, **migrações** (inclui v1→v2 com
 dados) e **serviços sobre SQLite real** (conversas, plano→lote, cenas/cancelar/parar/regerar/falha, vídeos/download/zip, virais,
-avatares, ⚙). `no-network.test.ts` varre `src/**` e `next.config.ts` com o parser do TypeScript e falha se aparecer import de
+avatares, ⚙, migração do modelo de imagem, INTELIGÊNCIA, sufixos do PEDIDO). `no-network.test.ts` varre `src/**` e `next.config.ts` com o parser do TypeScript e falha se aparecer import de
 rede, URL externa, `WebSocket`/`EventSource`/`XMLHttpRequest`/`sendBeacon` ou `fetch` fora do `client.ts`.
 
 Além dos testes: `tsc --noEmit`, `next build`, smoke HTTP ponta a ponta (Host falso 403, CSRF 403, upload válido 201, corrida de

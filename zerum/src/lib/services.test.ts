@@ -717,6 +717,24 @@ describe('configurações, feedback e ponte', () => {
     expect(s.subtitle).toMatchObject({ color: '#22D3EE', font: 'Anton', saved: true, words: 3 });
   });
 
+  it('migração de uma linha: "Nano Banana Lite" salvo na versão anterior vira "Nano Banana 2 Lite" (e fica gravado)', async () => {
+    const { setSetting, getSetting } = await import('./repo/settings');
+    setSetting('imageModel', 'Nano Banana Lite');
+    expect(m.settings.getSettings().imageModel).toBe('Nano Banana 2 Lite');
+    expect(getSetting('imageModel', '')).toBe('Nano Banana 2 Lite');
+    setSetting('imageModel', 'Qualquer coisa velha');
+    expect(m.settings.getSettings().imageModel).toBe('Nano Banana Pro'); // desconhecido volta ao padrão
+    expect(m.settings.patchSettings({ imageModel: 'Nano Banana 2 Lite' }).imageModel).toBe('Nano Banana 2 Lite');
+    m.settings.patchSettings({ imageModel: 'Nano Banana Pro' });
+  });
+
+  it('INTELIGÊNCIA: padrão Gemini, só aceita as 2 opções reais, persiste (preferência local, sem IA)', () => {
+    expect(m.settings.getSettings().brain).toBe('Gemini 3.8 Flash (High) (padrão e recomendado)');
+    expect(() => m.settings.patchSettings({ brain: 'GPT inventado' })).toThrow(/desconhecida/);
+    expect(m.settings.patchSettings({ brain: 'Claude Opus 5.5 (Medium)' }).brain).toBe('Claude Opus 5.5 (Medium)');
+    m.settings.patchSettings({ brain: 'Gemini 3.8 Flash (High) (padrão e recomendado)' });
+  });
+
   it('chave própria: guardada só no banco, a leitura devolve só "••••1234"; apagar remove', () => {
     expect(() => m.settings.saveApiKey('curta')).toThrow(/chave inteira/);
     const s = m.settings.saveApiKey('sk-segredo-1234');

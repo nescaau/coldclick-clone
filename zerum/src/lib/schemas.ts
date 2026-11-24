@@ -94,6 +94,7 @@ export const SettingsPatchSchema = z
     minCredits: z.number().int().min(0).max(100000),
     parallel: z.number().int().min(1).max(4),
     imageModel: z.string().max(60),
+    brain: z.string().max(80),
     flowCopy: z.boolean(),
     autoApprove: z.boolean(),
     simulation: z.boolean(),

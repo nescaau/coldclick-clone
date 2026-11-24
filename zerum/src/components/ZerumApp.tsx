@@ -360,7 +360,7 @@ export function ZerumApp() {
 
       <HelpButtons />
       <BridgePill status={ponte} onClick={() => setFlowAberto(true)} />
-      <ContasPanels onAtualizar={refreshPonte} />
+      <ContasPanels detail={ponte?.detail ?? ''} onAtualizar={refreshPonte} />
 
       {gaveta === 'avatares' && <AvataresDrawer avatares={avatares} onMudou={refreshAvatares} onClose={() => setGaveta(null)} />}
       {gaveta === 'config' && (

@@ -7,6 +7,7 @@
  */
 import { MAX_QUANTITY } from '../limits';
 import { parseQuantity, type DirectorMode } from './director';
+import { imageModelSuffix } from './settings';
 import { LANGUAGES, languageName, sanitizeWord, type LanguageId } from './video-options';
 
 export type PathId = 'igual' | 'adaptar';
@@ -44,7 +45,6 @@ export const pathLabel = (id: PathId): string => (id === 'igual' ? 'Igual ao vir
 
 /** Modelo padrão exibido em "PEDIDO" (texto literal do original). */
 export const DEFAULT_VIDEO_MODEL = 'Omni 1.1 Flash';
-export const IMAGE_MODELS = ['Nano Banana Pro', 'Nano Banana 2', 'Nano Banana Lite'] as const;
 
 export interface PlanParams {
   mode: DirectorMode;
@@ -179,5 +179,5 @@ export const executeLabel = (n: number): string => (n === 1 ? 'Executar' : `Exec
 export function pedidoSummary(p: PlanParams, avatarNames: string[], imageModel: string): string {
   const quem = p.newAvatars > 0 ? `${p.newAvatars} avatar${p.newAvatars === 1 ? '' : 'es'} novo${p.newAvatars === 1 ? '' : 's'}` : avatarNames.length ? avatarNames.join(' + ') : 'quem aparece?';
   const v = variationLabel(p.variation).toLowerCase();
-  return [pathLabel(p.path), v, `${p.quantity} vídeo${p.quantity === 1 ? '' : 's'}`, quem, DEFAULT_VIDEO_MODEL, `${imageModel} (melhor rosto)`].join(' · ');
+  return [pathLabel(p.path), v, `${p.quantity} vídeo${p.quantity === 1 ? '' : 's'}`, quem, DEFAULT_VIDEO_MODEL, `${imageModel}${imageModelSuffix(imageModel)}`].join(' · ');
 }

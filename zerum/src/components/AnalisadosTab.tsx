@@ -42,7 +42,7 @@ export function AnalisadosTab({ virais, onAtualizar, onUsar }: Props) {
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {virais.map((v) => {
             const nome = v.name.replace(/\.mp4$/i, '');
-            const meta = [v.durationS !== null ? fmtDuration(v.durationS) : '', fmtDateTime(v.createdAt), v.analysis?.enquadramento ?? ''].filter(Boolean).join(' · ');
+            const meta = [v.durationS !== null ? fmtDuration(v.durationS) : '', fmtDateTime(v.createdAt)].filter(Boolean).join(' · '); // "32 s · 11/23, 07:50 PM"
             return (
               <li key={v.id} className={`flex gap-3 p-3 ${T.cartaoInterno}`}>
                 <ViralThumb id={v.id} className="h-36 w-20 !rounded-xl" />
@@ -53,12 +53,12 @@ export function AnalisadosTab({ virais, onAtualizar, onUsar }: Props) {
                   <p className={`font-mono text-[11px] ${T.textoFraco}`}>{meta}</p>
                   {v.gancho && (
                     <p className={`line-clamp-2 text-xs ${T.textoSuave}`}>
-                      <b>Gancho:</b> {clip(v.gancho, 160)}
+                      <b>Gancho:</b> {clip(v.gancho, 200)}
                     </p>
                   )}
                   {v.analysis?.estrutura && (
                     <p className={`line-clamp-2 text-xs ${T.textoFraco}`}>
-                      <b>Estrutura:</b> {clip(v.analysis.estrutura, 160)}
+                      <b>Estrutura:</b> {clip(v.analysis.estrutura, 200)}
                     </p>
                   )}
                   {!v.gancho && !v.analysis?.estrutura && <p className={`text-xs ${T.textoMudo}`}>Leitura local: só os dados do arquivo (corrija no Diretor para preencher).</p>}
