@@ -66,9 +66,15 @@ export function VideosTab({ tick }: { tick?: number }) {
                   {v.downloadName} · {v.scenesTotal} cena{v.scenesTotal === 1 ? '' : 's'} · {v.finishedAt ? fmtDateTime(v.finishedAt) : ''}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-black text-amber-200" title="Nesta fase o arquivo é uma cópia do viral (ou um clipe de teste), não uma geração real.">
-                    SIMULADO
-                  </span>
+                  {v.simulated ? (
+                    <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-black text-amber-200" title="Este arquivo é uma cópia do viral (ou um clipe de teste), não uma geração real: foi feito com a simulação local ligada.">
+                      SIMULADO
+                    </span>
+                  ) : (
+                    <span className="rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-black text-emerald-200" title="Arquivo MP4 gerado e baixado do Flow, na sua conta.">
+                      FLOW
+                    </span>
+                  )}
                   <a href={`${BASE_PATH}/api/videos/${v.id}/download`} className={`rounded-xl px-3 py-1 text-xs ${T.botaoVidro}`}>
                     ⬇ Baixar MP4
                   </a>

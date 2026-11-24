@@ -22,6 +22,7 @@ import { conversationTitle } from '../domain/director';
 import { buildSteps, executeLabel, interpretRequest, type PlanParams } from '../domain/plan';
 import { listAvatarRows } from '../repo/avatars';
 import { getDetail, readOptions } from './conversation-service';
+import { executionMode } from './bridge-service';
 import { openBatch } from './production-service';
 import { getSettings } from './settings-service';
 import { namesOf } from './avatar-service';
@@ -156,9 +157,11 @@ export function confirmPlan(planId: string, opts: { auto?: boolean } = {}): { co
       'diretor',
       'Executando o que você confirmou, na ordem. A produção aparece aqui ao lado e em Produção; cada vídeo pronto entra em Vídeos.\n\n' +
         `Feito: lote "${b.title}" montado com ${b.videos.length} vídeo${plural(b.videos.length, '', 's')}, ${b.videos[0]?.scenesTotal ?? 0} cena${plural(b.videos[0]?.scenesTotal ?? 0, '', 's')} cada. Acompanhe no painel Produção; cada vídeo pronto entra em Vídeos.` +
-        (getSettings().simulation
-          ? '\n\nNesta versão local a geração é simulada (⚙ → Simulação local): as cenas avançam pelo relógio e o vídeo “pronto” é uma cópia do viral — a geração real pelo Flow é a próxima fase.'
-          : '\n\nSem executor do Flow (fase futura): o lote fica na fila e nada é enviado a lugar nenhum.'),
+        {
+          simulado: '\n\nA geração está SIMULADA (⚙ → Simulação local): as cenas avançam pelo relógio e o vídeo “pronto” é uma cópia do viral (selo SIMULADO). Para gerar de verdade no Flow, conecte a extensão e desligue a simulação.',
+          real: '\n\nO Flow está conectado: cada cena será gerada de verdade na sua conta (gasta crédito do Flow) e o vídeo pronto é o MP4 baixado de lá. Deixe esta aba do Zerum aberta enquanto gera.',
+          espera: '\n\nSem a extensão do Flow conectada (EXTENSAO_NAO_INSTALADA), o lote fica na fila e nada é enviado a lugar nenhum. Use “Conectar o Flow” para gerar de verdade.',
+        }[executionMode()],
     );
     logEvent('conversation', convId, opts.auto ? 'Plano executado automaticamente (Aprovar tudo ligado no ⚙).' : 'Plano confirmado e executado.');
     updateConversation(convId, {});

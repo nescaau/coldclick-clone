@@ -117,6 +117,55 @@ export const SettingsPatchSchema = z
 
 export const ApiKeySchema = z.object({ key: z.string().trim().min(8, 'Cole a chave inteira.').max(300) });
 
+// ─── ponte com a extensão (geração real) ─────────────────────────────────────────────────────────────────────────────
+const pumpId = z.string().min(1).max(64);
+
+/** O retrato da extensão que a página informa (a cada ~5 s). Só campos sanitizados: nada de token, journal ou mídia. */
+export const BridgeHeartbeatSchema = z.object({
+  pumpId,
+  status: z.object({
+    ready: z.boolean(),
+    pending: z.number().int().min(0).max(10_000),
+    detail: z.string().max(400),
+    checklist: z.object({ extensionInstalled: z.boolean(), extensionConnected: z.boolean(), flowTabOpen: z.boolean(), accountChosen: z.boolean() }),
+    version: z.string().max(30).optional(),
+    originBlocked: z.boolean().optional(),
+    accounts: z
+      .array(
+        z.object({
+          accountId: z.string().max(200),
+          projectId: z.string().max(80),
+          accountPath: z.string().max(20),
+          email: z.string().max(200).optional(),
+          credits: z.number().nullable().optional(),
+          online: z.boolean().optional(),
+          cooldownUntil: z.number().optional(),
+          paused: z.boolean().optional(),
+          pending: z.number().optional(),
+          uncertain: z.boolean().optional(),
+        }),
+      )
+      .max(12)
+      .optional(),
+  }),
+});
+
+/** Pedido de trabalho: a conta que a página escolheu para cenas NOVAS e as contas onde ela consegue retomar cenas em voo. */
+export const BridgeClaimSchema = z.object({ pumpId, accountId: z.string().max(200).default(''), available: z.array(z.string().max(200)).max(12).default([]) });
+
+export const SceneProgressSchema = z.object({ pumpId, orderId: z.string().max(128).default(''), phase: z.string().max(60).optional() });
+
+export const SceneFailSchema = z.object({
+  pumpId,
+  orderId: z.string().max(128).default(''),
+  code: z.string().max(160),
+  message: z.string().max(400),
+  /** 'cota' (pausa 24 h) | 'incomum' (5 min) | 'outro'. */
+  kind: z.enum(['cota', 'incomum', 'outro']).default('outro'),
+  /** Quando a conta volta (ms desde a época), se a extensão informou. */
+  retryAt: z.number().optional(),
+});
+
 export const FeedbackSchema = z.object({
   kind: z.enum(['bug', 'sugestao']),
   text: z.string().trim().min(3, 'Conte um pouco mais').max(MAX_FEEDBACK_CHARS),

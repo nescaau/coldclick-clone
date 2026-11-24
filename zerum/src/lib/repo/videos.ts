@@ -17,6 +17,10 @@ export interface VideoRow {
   started_at: number | null;
   finished_at: string | null;
   created_at: string;
+  /** 'sim' (simulado) | 'real' (clipes do Flow pela extensão). */
+  mode: 'sim' | 'real';
+  /** JSON (domain/real-run.ts) com o estado de cada cena; vazio enquanto o vídeo nunca rodou de verdade. */
+  real_json: string;
 }
 
 export interface NewVideo {
@@ -71,3 +75,23 @@ export function patchVideo(id: string, p: VideoPatch): void {
 export const deleteVideo = (id: string): void => {
   getDb().prepare('DELETE FROM videos WHERE id = ?').run(id);
 };
+
+/** Modo (sim/real) e estado das cenas reais (JSON). Separado do `patchVideo` da simulação de propósito. */
+export function setVideoReal(id: string, p: { mode?: 'sim' | 'real'; real?: string }): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (p.mode !== undefined) (sets.push('mode = ?'), vals.push(p.mode));
+  if (p.real !== undefined) (sets.push('real_json = ?'), vals.push(p.real));
+  if (sets.length) getDb().prepare(`UPDATE videos SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+}
+
+/** Vídeos em execução REAL (state 'gerando', mode 'real'), do mais antigo para o mais novo. */
+export const listRealRunningRows = (): VideoRow[] =>
+  getDb().prepare("SELECT * FROM videos WHERE mode = 'real' AND state = 'gerando' ORDER BY started_at ASC, created_at ASC, rowid ASC").all() as VideoRow[];
+
+/** Quantos vídeos reais estão gerando agora (limite de "Vídeos simultâneos"). */
+export const countRealRunning = (): number => (getDb().prepare("SELECT COUNT(*) AS n FROM videos WHERE mode = 'real' AND state = 'gerando'").get() as { n: number }).n;
+
+/** Outros vídeos que citam este arquivo (hash) — o arquivo só some quando ninguém mais o usa. */
+export const countRealHashUsers = (hash: string, exceptVideoId: string): number =>
+  (getDb().prepare('SELECT COUNT(*) AS n FROM videos WHERE id != ? AND real_json LIKE ?').get(exceptVideoId, `%${hash}%`) as { n: number }).n;

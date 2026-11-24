@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zerum · Flow</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="topo">
+    <img class="logo" src="../icons/icon-48.png" alt="" width="28" height="28">
+    <div class="marca"><strong>ZERUM</strong><span id="versao">Flow · extensão local</span></div>
+    <button id="abrir-flow" class="fantasma" type="button">Abrir o Flow</button>
+  </header>
+
+  <section class="bloco" aria-label="Situação">
+    <div id="status" class="vermelho" role="status" aria-live="polite">
+      <span class="farol" aria-hidden="true"></span>
+      <span id="status-frase">Verificando…</span>
+    </div>
+    <p id="status-dica" class="dica"></p>
+  </section>
+
+  <section class="bloco" aria-label="Contas">
+    <h2>Contas do Flow</h2>
+    <ul id="contas" class="contas"></ul>
+    <p class="dica">Uma conta só gera quando o Flow dela está aberto num projeto. A pausa por cota dura 24 h e não dá para pular: é de propósito.</p>
+  </section>
+
+  <section class="bloco" aria-label="Autorização">
+    <h2>Sites autorizados</h2>
+    <p class="dica">Só estas páginas do Zerum podem mandar na extensão (uma por linha).</p>
+    <textarea id="origens" rows="3" spellcheck="false" aria-label="Sites autorizados"></textarea>
+    <button id="salvar-origens" type="button" class="secundario">Salvar</button>
+    <p id="origens-msg" class="dica" role="status"></p>
+  </section>
+
+  <section class="bloco" aria-label="Ajustes">
+    <h2>Ajustes</h2>
+    <label class="linha"><input id="um-resultado" type="checkbox"> O Flow já está em <b>1 resultado por pedido</b> (não mexer)</label>
+    <p class="dica">Cada resultado extra gasta crédito. Marque só se o seu Flow já gera 1 por pedido e o diagnóstico não achou esse botão.</p>
+  </section>
+
+  <section class="bloco" aria-label="Diagnóstico">
+    <h2>Diagnóstico do Flow</h2>
+    <p class="dica">Confere, elemento por elemento, o que a extensão enxerga na aba do Flow (para ajustar os seletores).</p>
+    <button id="diagnostico" type="button" class="secundario">Rodar diagnóstico</button>
+    <ul id="diag" class="diag"></ul>
+  </section>
+
+  <details class="bloco recentes">
+    <summary><h2>Pedidos recentes</h2><span id="recentes-n" class="contagem"></span></summary>
+    <ol id="recentes" class="recentes"></ol>
+    <button id="limpar" type="button" class="link">Limpar o histórico concluído</button>
+  </details>
+
+  <p class="rodape">Nada sai deste computador além do que o próprio Flow já recebe da sua conta. Sem telemetria.</p>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '@/lib/client';
 import { MAX_VIRAL_BYTES, MAX_VIRAL_MB } from '@/lib/limits';
-import type { BridgeStatus } from '@/lib/bridge/status';
 import type {
   AvatarDTO,
   BatchDTO,
@@ -10,11 +9,13 @@ import type {
   ConversationSummary,
   DirectorMode,
   SendMessageResult,
+  SettingsDTO,
   VideoOptions,
   ViralDTO,
 } from '@/lib/types';
 import { AnalisadosTab } from './AnalisadosTab';
 import { AvataresDrawer } from './AvataresDrawer';
+import { LS_CONTA_FLOW, lerContaEscolhida, useBridge } from './BridgeRunner';
 import { ConfigDrawer } from './ConfigDrawer';
 import { ConversationSidebar } from './ConversationSidebar';
 import { DiretorPanel } from './DiretorPanel';
@@ -58,7 +59,6 @@ export function ZerumApp() {
   const [virais, setVirais] = useState<ViralDTO[] | null>(null);
   const [lotes, setLotes] = useState<BatchDTO[]>([]);
   const [avatares, setAvatares] = useState<AvatarDTO[]>([]);
-  const [ponte, setPonte] = useState<BridgeStatus | null>(null);
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [enviandoViral, setEnviandoViral] = useState(false);
@@ -66,21 +66,42 @@ export function ZerumApp() {
   const [flowAberto, setFlowAberto] = useState(false);
   const [bibliotecaAberta, setBibliotecaAberta] = useState(false);
   const [tick, setTick] = useState(0);
+  const [simulacao, setSimulacao] = useState(true);
+  const [contaEscolhida, setContaEscolhida] = useState('');
   const bootRef = useRef(false);
-
-  const refreshPonte = useCallback(async () => {
-    try {
-      setPonte(await apiGet<BridgeStatus>('/bridge/status'));
-    } catch {
-      setPonte(null);
-    }
-  }, []);
 
   const refreshLotes = useCallback(async () => {
     try {
       setLotes(await apiGet<BatchDTO[]>('/batches'));
     } catch {
       /* a próxima leitura tenta de novo */
+    }
+  }, []);
+
+  /** A ponte com a extensão: estado real (pílula, barra, modal, contas) e a execução dos lotes pelo Flow quando a simulação está desligada. */
+  const { status: ponte, atualizar: atualizarPonte } = useBridge(() => void refreshLotes());
+
+  const refreshSettings = useCallback(async () => {
+    try {
+      setSimulacao((await apiGet<SettingsDTO>('/settings')).simulation);
+    } catch {
+      /* mantém o último valor conhecido */
+    }
+  }, []);
+
+  const desligarSimulacao = useCallback(async () => {
+    setSimulacao((await apiPatch<SettingsDTO>('/settings', { simulation: false })).simulation);
+    void refreshLotes();
+    void atualizarPonte();
+  }, [atualizarPonte, refreshLotes]);
+
+  const escolherConta = useCallback((email: string) => {
+    setContaEscolhida(email);
+    try {
+      if (email) localStorage.setItem(LS_CONTA_FLOW, email);
+      else localStorage.removeItem(LS_CONTA_FLOW);
+    } catch {
+      /* sem storage: vale só até recarregar */
     }
   }, []);
 
@@ -114,9 +135,10 @@ export function ZerumApp() {
     bootRef.current = true;
     const salva = lsGet(LS_ABA) as Aba | null;
     if (salva && ABAS_VALIDAS.includes(salva)) setAba(salva);
+    setContaEscolhida(lerContaEscolhida() ?? '');
+    void refreshSettings();
     (async () => {
       try {
-        void refreshPonte();
         let lista = await refreshListas();
         if (lista.length === 0) {
           const nova = await apiPost<ConversationDetail>('/conversations', {});
@@ -131,7 +153,7 @@ export function ZerumApp() {
         setErro((e as Error).message);
       }
     })();
-  }, [abrir, refreshListas, refreshPonte]);
+  }, [abrir, refreshListas, refreshSettings]);
 
   // Produção em tempo real: enquanto há lote ativo (ou a aba Produção está aberta) relê a cada 1,5 s.
   const haAtivo = lotes.some(loteAtivo);
@@ -288,7 +310,7 @@ export function ZerumApp() {
       <Header aba={aba} gaveta={gaveta} avatares={avatares.length} onAba={mudarAba} onGaveta={setGaveta} />
 
       <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-4 sm:px-6">
-        <FlowBanner onOpen={() => setFlowAberto(true)} />
+        <FlowBanner status={ponte} onOpen={() => setFlowAberto(true)} />
 
         {erro && (
           <div role="alert" className={`flex items-start justify-between gap-3 px-4 py-3 text-sm text-zinc-100 ${T.cartaoInterno}`}>
@@ -360,20 +382,24 @@ export function ZerumApp() {
 
       <HelpButtons />
       <BridgePill status={ponte} onClick={() => setFlowAberto(true)} />
-      <ContasPanels detail={ponte?.detail ?? ''} onAtualizar={refreshPonte} />
+      <ContasPanels status={ponte} escolhida={contaEscolhida} onEscolher={escolherConta} onAtualizar={atualizarPonte} />
 
       {gaveta === 'avatares' && <AvataresDrawer avatares={avatares} onMudou={refreshAvatares} onClose={() => setGaveta(null)} />}
       {gaveta === 'config' && (
         <ConfigDrawer
+          status={ponte}
           onClose={() => setGaveta(null)}
-          onMudou={() => void refreshLotes()}
+          onMudou={() => {
+            void refreshLotes();
+            void refreshSettings();
+          }}
           onConectarFlow={() => {
             setGaveta(null);
             setFlowAberto(true);
           }}
         />
       )}
-      {flowAberto && <FlowModal status={ponte} onRetry={refreshPonte} onClose={() => setFlowAberto(false)} />}
+      {flowAberto && <FlowModal status={ponte} simulacao={simulacao} onDesligarSimulacao={desligarSimulacao} onRetry={atualizarPonte} onClose={() => setFlowAberto(false)} />}
       {bibliotecaAberta && <ViralPicker virais={virais ?? []} atualId={conv?.viral?.id ?? null} onUsar={(v) => void usarViral(v)} onClose={() => setBibliotecaAberta(false)} />}
     </div>
   );

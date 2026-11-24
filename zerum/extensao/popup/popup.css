@@ -1,0 +1,39 @@
+/* Popup da extensão: tema escuro como o Zerum, fontes do sistema (nenhum recurso externo). */
+:root { color-scheme: dark; --bg: #0a0a0b; --card: #121214; --linha: rgba(255,255,255,.12); --txt: #f4f4f5; --fraco: #a1a1aa; --ok: #34d399; --aviso: #fbbf24; --erro: #f87171; }
+* { box-sizing: border-box; }
+body { margin: 0; width: 360px; background: var(--bg); color: var(--txt); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--fraco); font-weight: 700; }
+.topo { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--linha); }
+.logo { border-radius: 8px; }
+.marca { flex: 1; display: flex; flex-direction: column; line-height: 1.1; }
+.marca strong { font-size: 15px; letter-spacing: .1em; }
+.marca span { color: var(--fraco); font-size: 11px; }
+.bloco { padding: 12px 14px; border-bottom: 1px solid var(--linha); }
+.dica { margin: 6px 0 0; color: var(--fraco); font-size: 11px; }
+#status { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.farol { width: 10px; height: 10px; border-radius: 50%; background: var(--erro); flex: none; }
+#status.verde .farol { background: var(--ok); }
+#status.amarelo .farol { background: var(--aviso); }
+.contas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.contas li { background: var(--card); border: 1px solid var(--linha); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; }
+.conta-email { font-weight: 700; overflow-wrap: anywhere; }
+.conta-saldo { text-align: right; font-weight: 700; }
+.conta-saldo small { display: block; color: var(--fraco); font-weight: 400; font-size: 10px; }
+.conta-estado { font-size: 11px; font-weight: 700; }
+.ok { color: var(--ok); } .atencao { color: var(--aviso); } .erro { color: var(--erro); }
+.conta-acoes { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 4px; }
+.vazio { color: var(--fraco); background: transparent !important; border-style: dashed !important; display: block !important; }
+button { font: inherit; cursor: pointer; border-radius: 8px; padding: 6px 10px; border: 1px solid transparent; }
+button.fantasma { background: transparent; border-color: var(--linha); color: var(--txt); }
+button.secundario { background: #fff; color: #000; font-weight: 700; margin-top: 6px; }
+button.link { background: none; color: var(--fraco); text-decoration: underline; padding: 4px 0; margin-top: 6px; }
+button:disabled { opacity: .5; cursor: default; }
+textarea { width: 100%; background: var(--card); color: var(--txt); border: 1px solid var(--linha); border-radius: 8px; padding: 6px 8px; font: 12px ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+.linha { display: flex; gap: 8px; align-items: flex-start; }
+.diag { list-style: none; margin: 8px 0 0; padding: 0; font: 11px ui-monospace, Menlo, Consolas, monospace; display: grid; gap: 2px; }
+.diag li.falta { color: var(--erro); } .diag li.achou { color: var(--ok); }
+.recentes { margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: var(--fraco); display: grid; gap: 4px; }
+summary { cursor: pointer; display: flex; justify-content: space-between; align-items: center; list-style: none; }
+summary h2 { margin: 0; }
+.contagem { color: var(--fraco); font-size: 11px; }
+.rodape { margin: 0; padding: 10px 14px; color: var(--fraco); font-size: 10px; }

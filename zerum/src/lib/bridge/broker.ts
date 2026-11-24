@@ -1,7 +1,9 @@
 /**
- * Broker de operações do Flow — máquina de estados e política de cota (INTERFACE da fase futura).
+ * Broker de operações do Flow — máquina de estados e política de cota. Este arquivo é o ESPELHO, no app, das regras que a
+ * extensão do Zerum (zerum/extensao/background/broker.js) aplica de verdade; um teste de contrato
+ * (extensao/test/contract.test.mjs) garante que os dois lados não divergem.
  *
- * Do README da extensão 0.4.18:
+ * Do README da extensão 0.4.18 (a semântica reproduzida):
  *   queued → dispatched → accepted → completed / failed / unknown
  *  - `accepted` exige polling/download antes de devolver o resultado.
  *  - queda de aba/servidor, timeout e entrega incerta ⇒ `unknown`: preserva o lock e NÃO reenfileira a geração.
@@ -36,10 +38,14 @@ export type RefusalKind = 'cota' | 'incomum';
 export const QUOTA_PAUSE_MS = 24 * 60 * 60 * 1000;
 export const SOFT_PAUSE_MS = 5 * 60 * 1000;
 
-/** Classifica o texto de recusa do Google/extensão. */
+/**
+ * Classifica o texto de recusa do Google/extensão. A cota vence quando o texto tem as duas coisas.
+ * Mesmo critério do broker da extensão (extensao/lib/protocol.js — o teste de contrato compara os dois), que casa
+ * códigos compostos como `COTA_HTTP_429` e `PUBLIC_ERROR_DAILY_QUOTA_REACHED` (por isso sem `\b`: o `_` é "letra").
+ */
 export function classifyRefusal(text: string): RefusalKind | null {
   const t = String(text ?? '');
-  if (/\b429\b|QUOTA|\bCOTA\b/i.test(t)) return 'cota';
+  if (/QUOTA|COTA|(?<![0-9])429(?![0-9])/i.test(t)) return 'cota';
   if (/INCOMUM|UNUSUAL|RESOURCE_EXHAUSTED/i.test(t)) return 'incomum';
   return null;
 }

@@ -62,6 +62,27 @@ describe('migrações', () => {
   });
 });
 
+describe('v2 → v3 (fase 3: geração real; append-only, sem perder dados)', () => {
+  it('vídeos que já existiam continuam "sim" (simulados), com real_json vazio — nada é reescrito', () => {
+    const db = new Database(':memory:');
+    runMigrations(db, MIGRATIONS.slice(0, 2)); // até o v2
+    expect(db.pragma('user_version', { simple: true })).toBe(2);
+    db.prepare("INSERT INTO batches (id, source, title, quantity, state) VALUES ('b','diretor','Lote',1,'rodando')").run();
+    db.prepare("INSERT INTO videos (id, batch_id, idx, state, scenes_done) VALUES ('v','b',0,'gerando',2)").run();
+
+    runMigrations(db, MIGRATIONS); // v3 por cima
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(3);
+    expect(db.prepare("SELECT state, scenes_done, mode, real_json FROM videos WHERE id = 'v'").get()).toEqual({ state: 'gerando', scenes_done: 2, mode: 'sim', real_json: '' });
+
+    // a coluna nova aceita o estado da execução real e não quebra a cascata do lote
+    db.prepare("UPDATE videos SET mode = 'real', real_json = '{\"v\":1}' WHERE id = 'v'").run();
+    expect(db.prepare("SELECT mode, real_json FROM videos WHERE id = 'v'").get()).toEqual({ mode: 'real', real_json: '{"v":1}' });
+    db.prepare("DELETE FROM batches WHERE id = 'b'").run();
+    expect((db.prepare('SELECT COUNT(*) AS n FROM videos').get() as { n: number }).n).toBe(0);
+  });
+});
+
 describe('v1 → v2 (append-only, sem perder dados)', () => {
   it('lotes, eventos, virais, avatares e conversas do v1 sobrevivem; colunas novas ganham padrões seguros', () => {
     const db = new Database(':memory:');

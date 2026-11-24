@@ -81,7 +81,7 @@ export interface VideoDTO {
   attempt: number;
   /** Nome do arquivo ao baixar ("Nome_12345.mp4"). */
   downloadName: string;
-  /** Sempre true nesta fase: o arquivo entregue NÃO é uma geração real (ver README). */
+  /** true = o arquivo entregue é a CÓPIA simulada (selo SIMULADO); false = o MP4 foi gerado e baixado do Flow pela extensão (ver README). */
   simulated: boolean;
   finishedAt: string | null;
   createdAt: string;
@@ -131,7 +131,7 @@ export interface AvatarDTO {
 }
 
 export interface SettingsDTO {
-  /** "Troca automática de conta" (painel Contas Flow). Só preferência: sem executor nesta fase. */
+  /** "Troca automática de conta" (painel Contas Flow): na geração real, cada cena escolhe a conta com crédito (ver bridge/accounts.ts). */
   autoSwitch: boolean;
   /** "Trocar abaixo de créditos" (padrão 20, como no original). */
   minCredits: number;
@@ -146,7 +146,7 @@ export interface SettingsDTO {
   subtitle: SubtitleSettings;
   /** "Aprovar tudo automaticamente": o plano do Diretor executa sem clique. */
   autoApprove: boolean;
-  /** Simulação local da geração (o executor real é a fase futura). */
+  /** Simulação local da geração (padrão: ligada). Desligada + extensão do Flow pronta = geração REAL; desligada sem extensão = lote na fila. */
   simulation: boolean;
   /** Teste do estado "falhou": todo N-ésimo vídeo falha na 1ª tentativa (0 = desligado). */
   simFailEvery: number;

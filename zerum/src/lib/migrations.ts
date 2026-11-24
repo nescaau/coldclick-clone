@@ -195,4 +195,13 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_plans_conv ON plans(conversation_id, created_at);
   `,
+
+  /* v3 — fase 3: geração REAL pela extensão (Flow).
+       · videos.mode: 'sim' = simulado (o relógio avança as cenas, o "pronto" é cópia do viral); 'real' = clipes baixados do Flow
+       · videos.real_json: JSON com o estado de cada cena (conta, chave da ordem na extensão, hash do MP4) e o arquivo final
+       (colunas novas com padrão seguro: todo vídeo existente continua "sim", sem dados perdidos) */
+  `
+  ALTER TABLE videos ADD COLUMN mode TEXT NOT NULL DEFAULT 'sim';
+  ALTER TABLE videos ADD COLUMN real_json TEXT NOT NULL DEFAULT '';
+  `,
 ];

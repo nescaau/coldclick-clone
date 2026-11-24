@@ -2,12 +2,14 @@
  * Produção: lotes → vídeos → cenas. Persistido em SQLite; o log de cada lote é gravado em `events` (tempo real: a UI lê
  * a cada ~1,5 s).
  *
- * QUEM GERA: o executor real (Flow, pela extensão) é a fase futura. Aqui existe o executor SIMULADO (⚙ → "Simulação
- * local"): o relógio faz cada cena "ficar pronta" depois de `sceneMs`, e o vídeo "pronto" entregue para download é uma
- * CÓPIA do viral (ou um clipe de teste, se o lote não tem viral). Isso é sempre dito no log e no cartão do vídeo.
- * Com a simulação desligada, o lote fica em "na fila" esperando o executor — nada avança sozinho.
+ * QUEM GERA (ver `executionMode` em bridge-service.ts):
+ *  - SIMULADO (⚙ → "Simulação local" ligada): o relógio faz cada cena "ficar pronta" depois de `sceneMs`, e o vídeo "pronto"
+ *    é uma CÓPIA do viral (ou um clipe de teste). Isso é sempre dito no log e no cartão do vídeo (selo SIMULADO).
+ *  - REAL (simulação desligada + extensão pronta): quem avança é a ponte — a página reserva uma cena por vez
+ *    (real-service.ts), a extensão gera no Flow e o MP4 baixado de lá vira o vídeo "pronto" (sem selo SIMULADO).
+ *  - ESPERA (simulação desligada, sem extensão): o lote fica "na fila" — nada avança sozinho.
  *
- * O avanço é por LEITURA (`tick`): sem timers nem processos em segundo plano. Cada GET de produção/vídeos chama `tick`.
+ * O avanço SIMULADO é por LEITURA (`tick`): sem timers nem processos em segundo plano. Cada GET de produção/vídeos chama `tick`.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -17,6 +19,8 @@ import { transaction } from '../db';
 import { badRequest, conflict, notFound } from '../errors';
 import { splitSpeech, readAnalysis } from '../domain/analysis';
 import { pathLabel, variationLabel, type PlanParams } from '../domain/plan';
+import { parseRun } from '../domain/real-run';
+import { placeholderScript } from '../domain/flow-prompt';
 import {
   advanceVideos,
   applyChanges,
@@ -40,10 +44,12 @@ import {
   setStopRequested,
   type BatchRow,
 } from '../repo/batches';
-import { countVideos, deleteVideo, getVideoRow, insertVideo, listReadyVideoRows, listVideoRows, patchVideo, type VideoRow } from '../repo/videos';
+import { countVideos, deleteVideo, getVideoRow, insertVideo, listReadyVideoRows, listVideoRows, patchVideo, setVideoReal, type VideoRow } from '../repo/videos';
 import { getViral } from '../repo/virals';
 import type { BatchDTO, EventDTO, VideoDTO } from '../types';
-import { bumpRoleta, getSimConfig, isSimulation } from './settings-service';
+import { bumpRoleta, getSimConfig } from './settings-service';
+import { executionMode } from './bridge-service';
+import { clipExists, dropVideoFiles, flowFilePath } from './flow-files';
 import { PLACEHOLDER_MP4 } from './placeholder-clip';
 import type { ZipEntry } from '../domain/zip';
 import { safeZipName, uniqueNames } from '../domain/zip';
@@ -52,7 +58,7 @@ export const viralFilePath = (hash: string): string => path.join(VIRALS_DIR, `${
 
 const batchHash = (id: string) => crypto.createHash('sha256').update(id).digest('hex');
 
-const parseScenes = (raw: string): { fala: string }[] => {
+export const parseScenes = (raw: string): { fala: string }[] => {
   try {
     const p = JSON.parse(raw) as { fala?: unknown }[];
     return Array.isArray(p) ? p.map((s) => ({ fala: typeof s?.fala === 'string' ? s.fala : '' })) : [];
@@ -61,7 +67,7 @@ const parseScenes = (raw: string): { fala: string }[] => {
   }
 };
 
-function toVideoDTO(v: VideoRow, batchName: string): VideoDTO {
+export function toVideoDTO(v: VideoRow, batchName: string): VideoDTO {
   const run = { state: v.state, scenesDone: v.scenes_done, failScene: v.fail_scene };
   return {
     id: v.id,
@@ -77,7 +83,8 @@ function toVideoDTO(v: VideoRow, batchName: string): VideoDTO {
     error: v.error,
     attempt: v.attempt,
     downloadName: downloadName(batchName, batchHash(v.batch_id), v.idx),
-    simulated: true,
+    // Só o vídeo gerado pelo Flow (mode 'real') deixa de ser "simulado". Os demais — inclusive os que ainda estão na fila — são.
+    simulated: v.mode !== 'real',
     finishedAt: v.finished_at,
     createdAt: v.created_at,
   };
@@ -133,10 +140,8 @@ function sceneScripts(input: OpenBatchInput, nScenes: number, transcricao: strin
   const chunks = splitSpeech(transcricao, nScenes);
   return Array.from({ length: nScenes }, (_, i) => {
     const k = i + 1;
-    if (input.params.path === 'adaptar') {
-      return { fala: `Cena ${k}: fala nova sobre o mesmo assunto (o roteiro é escrito pela IA do Diretor — fase futura).` };
-    }
-    return { fala: chunks[i] || `Cena ${k}: mesma fala do viral (a transcrição está vazia — preencha em “A leitura errou? Corrigir”).` };
+    if (input.params.path === 'adaptar') return { fala: placeholderScript('adaptar', k) };
+    return { fala: chunks[i] || placeholderScript('vazio', k) };
   });
 }
 
@@ -180,10 +185,13 @@ export function openBatch(input: OpenBatchInput): BatchDTO {
     logEvent('batch', id, `Lote criado (${input.source === 'diretor' ? 'pelo Diretor, plano confirmado' : 'manual'}): ${p.quantity} vídeo${p.quantity === 1 ? '' : 's'}, ${n} cena${n === 1 ? '' : 's'} cada.`);
     logEvent('batch', id, `Pedido: ${pathLabel(p.path)} · ${variationLabel(p.variation).toLowerCase()} · idioma ${languageName(p.language)} · ${optionsSummary({ word: p.word, bubbleOn: p.bubbleOn })} · cor ${p.bubbleColor}.`);
     logEvent('batch', id, viral ? `Estrutura vem do viral “${viral.name}” (guardado só neste computador).` : 'Sem viral: lote a partir da ideia escrita.');
-    if (isSimulation()) {
+    const mode = executionMode();
+    if (mode === 'simulado') {
       logEvent('batch', id, 'Simulação local ligada (⚙): nenhuma geração real e nenhuma chamada externa — as cenas avançam pelo relógio e o vídeo “pronto” é uma cópia do viral (ou um clipe de teste).', 'aviso');
+    } else if (mode === 'real') {
+      logEvent('batch', id, 'Estado: na fila — o Flow (extensão conectada) vai gerar de verdade, uma cena de cada vez, na sua conta. Cada clipe gasta crédito do Flow; o vídeo pronto é o MP4 baixado de lá.');
     } else {
-      logEvent('batch', id, 'Estado: na fila — aguardando o executor do Flow (fase futura). Nada foi enviado a lugar nenhum; o lote fica guardado até lá.', 'aviso');
+      logEvent('batch', id, 'Estado: na fila — aguardando o executor do Flow (EXTENSAO_NAO_INSTALADA: conecte a extensão do Zerum). Nada foi enviado a lugar nenhum; o lote fica guardado até lá.', 'aviso');
     }
     return toBatchDTO(getBatchRow(id)!);
   });
@@ -235,32 +243,52 @@ function sourceMissing(b: BatchRow): boolean {
   return !!v && !fs.existsSync(viralFilePath(v.hash));
 }
 
-/** Avança a simulação até `now`. Idempotente e barato quando nada está ativo. */
+/**
+ * Recalcula o estado do lote a partir dos vídeos e registra no log quando ele muda (encerrado / parado).
+ * Usado pela simulação (`tickBatches`) e pela execução real (real-service.ts) — a regra é uma só.
+ * `states` = os estados que os vídeos TERÃO (a simulação ainda não gravou as mudanças quando chama).
+ */
+export function settleBatchState(b: BatchRow, states: readonly VideoRun['state'][]): void {
+  const next = batchStateOf(states, !!b.stop_requested);
+  if (next === b.state) return;
+  setBatchState(b.id, next);
+  if (next === 'pronto' || next === 'falhou') {
+    const done = states.length;
+    const ok = states.filter((s) => s === 'pronto').length;
+    logEvent('batch', b.id, `Lote: produção encerrada — ${ok}/${done} pronto${ok === 1 ? '' : 's'}${next === 'falhou' ? `, ${done - ok} com falha (use ↻ Regerar)` : ''}.`, next === 'falhou' ? 'aviso' : 'info');
+  } else if (next === 'parado') {
+    logEvent('batch', b.id, 'Lote parado: os vídeos atuais terminaram e nenhum novo foi iniciado. Clique em Continuar de onde parou.');
+  }
+}
+
+/** Relê o lote e acomoda o estado (a execução real chama isto depois de mexer num vídeo). */
+export function refreshBatchState(batchId: string): void {
+  const b = getBatchRow(batchId);
+  if (b) settleBatchState(b, listVideoRows(batchId).map((v) => v.state));
+}
+
+/**
+ * Avança a SIMULAÇÃO até `now`. Idempotente e barato quando nada está ativo.
+ * Só roda com a simulação ligada (⚙); na execução real quem avança é a ponte, e sem extensão nada avança.
+ * Vídeos já em execução REAL (mode 'real') nunca são simulados.
+ */
 export function tickBatches(now = Date.now()): void {
-  if (!isSimulation()) return;
+  if (executionMode(now) !== 'simulado') return;
   const active = listActiveBatchRows();
   if (active.length === 0) return;
   const cfg = getSimConfig();
   transaction(() => {
     for (const b of active) {
       const rows = listVideoRows(b.id);
-      const runs = videoRuns(rows);
+      const simRows = rows.filter((v) => v.mode !== 'real');
+      const realStates = rows.filter((v) => v.mode === 'real').map((v) => v.state);
+      const runs = videoRuns(simRows);
       const changes = advanceVideos(runs, now, cfg, { stopRequested: !!b.stop_requested, sourceMissing: sourceMissing(b) });
       for (const c of changes) {
         patchVideo(c.id, c.patch);
         if (c.log) logEvent('batch', b.id, c.log.message, c.log.level);
       }
-      const next = batchStateOf(applyChanges(runs, changes).map((v) => v.state), !!b.stop_requested);
-      if (next !== b.state) {
-        setBatchState(b.id, next);
-        if (next === 'pronto' || next === 'falhou') {
-          const done = rows.length;
-          const ok = applyChanges(runs, changes).filter((v) => v.state === 'pronto').length;
-          logEvent('batch', b.id, `Lote: produção encerrada — ${ok}/${done} pronto${ok === 1 ? '' : 's'}${next === 'falhou' ? `, ${done - ok} com falha (use ↻ Regerar)` : ''}.`, next === 'falhou' ? 'aviso' : 'info');
-        } else if (next === 'parado') {
-          logEvent('batch', b.id, 'Lote parado: os vídeos atuais terminaram e nenhum novo foi iniciado. Clique em Continuar de onde parou.');
-        }
-      }
+      settleBatchState(b, [...applyChanges(runs, changes).map((v) => v.state), ...realStates]);
     }
   });
 }
@@ -348,8 +376,18 @@ export function retryFailed(batchId: string, videoId?: string): BatchDTO {
   need(batchId);
   const failed = listVideoRows(batchId).filter((v) => v.state === 'falhou' && (!videoId || v.id === videoId));
   if (failed.length === 0) throw conflict('Nenhum vídeo com falha para refazer.');
+  const simulating = executionMode() === 'simulado';
   transaction(() => {
-    for (const v of failed) patchVideo(v.id, { state: 'fila', error: '', failScene: null, finishedAt: null });
+    for (const v of failed) {
+      // Um vídeo que falhou no Flow e é refeito com a simulação ligada vira simulado de novo (senão ficaria parado na fila).
+      // Com a simulação desligada ele continua REAL: as cenas já baixadas ficam, só as que faltam são geradas.
+      if (v.mode === 'real' && simulating) {
+        dropVideoFiles(v);
+        setVideoReal(v.id, { mode: 'sim', real: '' });
+        patchVideo(v.id, { scenesDone: 0 });
+      }
+      patchVideo(v.id, { state: 'fila', error: '', failScene: null, finishedAt: null });
+    }
     setStopRequested(batchId, false);
     setBatchState(batchId, 'na_fila');
     logEvent(
@@ -376,10 +414,12 @@ export function approveBatch(id: string): BatchDTO {
 /** "✕ Descartar lote": nada vai pra Vídeos e as cenas guardadas deste lote são apagadas. Cancela antes se estiver gerando. */
 export function discardBatch(id: string): void {
   need(id);
+  const rows = listVideoRows(id);
   transaction(() => {
     deleteBatch(id); // vídeos saem em cascata
     deleteEvents('batch', id);
   });
+  for (const v of rows) dropVideoFiles(v); // os clipes do Flow deste lote (depois: se a transação falhar, nada some)
 }
 
 /** Descarta um vídeo (sai da Produção e de Vídeos). Não vale para vídeo em andamento. */
@@ -395,6 +435,7 @@ export function removeVideo(videoId: string): void {
       deleteEvents('batch', v.batch_id);
     }
   });
+  dropVideoFiles(v); // os clipes do Flow deste vídeo (só os que nenhum outro vídeo usa)
 }
 
 /** Cartões de "MEUS VÍDEOS": só os prontos, agrupados por lote (o mais novo primeiro). */
@@ -422,7 +463,16 @@ export function listReadyGroups(): ReadyGroup[] {
 
 export type MediaSource = { kind: 'file'; path: string; size: number; name: string } | { kind: 'bytes'; bytes: Uint8Array; size: number; name: string };
 
-function sourceFor(b: BatchRow, name: string): MediaSource {
+/** O MP4 final de um vídeo REAL (baixado do Flow). Some do disco → conflito claro, nunca uma cópia disfarçada. */
+function realSource(v: VideoRow, name: string): MediaSource {
+  const hash = parseRun(v.real_json, v.scenes_total)?.final?.hash ?? '';
+  if (!hash || !clipExists(hash)) throw conflict('O arquivo deste vídeo não está mais neste computador. Use ↻ Tentar de novo para gerar de novo as cenas que faltam.');
+  const p = flowFilePath(hash);
+  return { kind: 'file', path: p, size: fs.statSync(p).size, name };
+}
+
+function sourceFor(b: BatchRow, v: VideoRow, name: string): MediaSource {
+  if (v.mode === 'real') return realSource(v, name);
   const viral = b.viral_id ? getViral(b.viral_id) : undefined;
   if (viral) {
     const p = viralFilePath(viral.hash);
@@ -431,14 +481,14 @@ function sourceFor(b: BatchRow, name: string): MediaSource {
   return { kind: 'bytes', bytes: PLACEHOLDER_MP4, size: PLACEHOLDER_MP4.length, name };
 }
 
-/** Arquivo para baixar um vídeo PRONTO. Nesta fase é a cópia simulada (viral ou clipe de teste). */
+/** Arquivo para baixar um vídeo PRONTO: o MP4 baixado do Flow (real) ou a cópia simulada (viral ou clipe de teste). */
 export function videoMedia(videoId: string): MediaSource {
   tickBatches();
   const v = getVideoRow(videoId);
   if (!v) throw notFound('Vídeo');
   if (v.state !== 'pronto') throw conflict('Esse vídeo ainda não está pronto.');
   const b = need(v.batch_id);
-  return sourceFor(b, toVideoDTO(v, b.batch_name).downloadName);
+  return sourceFor(b, v, toVideoDTO(v, b.batch_name).downloadName);
 }
 
 /** Entradas do zip "Baixar todos os prontos (N)" de um lote. */
@@ -449,7 +499,7 @@ export function readyZipEntries(batchId: string): { name: string; entries: ZipEn
   if (ready.length === 0) throw conflict('Nenhum vídeo pronto neste lote.');
   const names = uniqueNames(ready.map((v) => safeZipName(toVideoDTO(v, b.batch_name).downloadName, `video-${v.idx + 1}.mp4`)));
   const entries = ready.map((v, i): ZipEntry => {
-    const src = sourceFor(b, names[i]);
+    const src = sourceFor(b, v, names[i]);
     return src.kind === 'bytes' ? { name: names[i], data: src.bytes } : { name: names[i], data: () => fs.createReadStream(src.path) };
   });
   return { name: `${safeZipName(b.batch_name || b.title, 'lote')}.zip`, entries };

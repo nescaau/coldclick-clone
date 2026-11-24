@@ -22,6 +22,21 @@ async function request<T>(method: string, path: string, body?: unknown, form?: F
   return data as T;
 }
 
+/** Bytes crus (foto do avatar, clipe de vídeo) — o corpo não é JSON. */
+export async function apiGetBytes(path: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  const res = await fetch(`${BASE_PATH}/api${path}`, { cache: 'no-store' });
+  if (!res.ok) throw new ApiError(res.status, `Erro ${res.status}`);
+  return { bytes: new Uint8Array(await res.arrayBuffer()), mime: (res.headers.get('content-type') ?? '').split(';')[0] };
+}
+
+/** Envia bytes crus (PUT). A resposta é JSON como nas demais rotas. */
+export async function apiPutBytes<T>(path: string, bytes: Uint8Array, mime = 'video/mp4'): Promise<T> {
+  const res = await fetch(`${BASE_PATH}/api${path}`, { method: 'PUT', headers: { 'Content-Type': mime }, body: bytes as BodyInit, cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error ?? `Erro ${res.status}`);
+  return data as T;
+}
+
 export const apiGet = <T>(path: string) => request<T>('GET', path);
 export const apiPost = <T>(path: string, body: unknown = {}) => request<T>('POST', path, body);
 export const apiPatch = <T>(path: string, body: unknown) => request<T>('PATCH', path, body);

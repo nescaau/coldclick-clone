@@ -41,6 +41,10 @@ export const getBatchRow = (id: string): BatchRow | undefined => getDb().prepare
 export const listActiveBatchRows = (): BatchRow[] =>
   getDb().prepare(`${SELECT} WHERE b.state IN ('preparando','na_fila','rodando') ORDER BY b.created_at ASC, b.rowid ASC`).all() as BatchRow[];
 
+/** Lotes ativos que ainda aceitam vídeos novos (não parados, nem cancelados) — a fonte do próximo vídeo real. */
+export const listClaimableBatchRows = (): BatchRow[] =>
+  getDb().prepare(`${SELECT} WHERE b.state IN ('na_fila','rodando') AND b.stop_requested = 0 ORDER BY b.created_at ASC, b.rowid ASC`).all() as BatchRow[];
+
 export interface NewBatch {
   conversationId: string | null;
   viralId: string | null;

@@ -349,7 +349,7 @@ describe('Produção: lote → vídeos → cenas (simulação local com relógio
     const cur = m.prod.getBatchDTO(b.id);
     expect(cur.state).toBe('na_fila');
     expect(cur.videos[0].state).toBe('fila');
-    expect(m.prod.batchEvents(b.id).some((l) => /aguardando o executor do Flow \(fase futura\)/.test(l.message))).toBe(true);
+    expect(m.prod.batchEvents(b.id).some((l) => /aguardando o executor do Flow \(EXTENSAO_NAO_INSTALADA/.test(l.message))).toBe(true);
   });
 
   it('aprovar lote → sai da Produção (os vídeos ficam em Vídeos); só depois de terminar', () => {
@@ -747,7 +747,7 @@ describe('configurações, feedback e ponte', () => {
     expect(m.feedback.sendFeedback({ kind: 'bug', text: 'algo quebrou' }).id).toBeTruthy();
   });
 
-  it('ponte: executor nulo → sempre desligada; é substituível (fase futura)', async () => {
+  it('ponte: sem retrato da extensão → desligada (EXTENSAO_NAO_INSTALADA); um executor injetado a substitui (testes)', async () => {
     expect((await m.bridge.getBridgeStatus()).ready).toBe(false);
     m.bridge.setExecutor({
       status: async () => ({ ready: true, pending: 1, detail: '', checklist: { extensionInstalled: true, extensionConnected: true, flowTabOpen: true, accountChosen: true } }),

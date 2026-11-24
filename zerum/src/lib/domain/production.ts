@@ -5,8 +5,11 @@
  * Estados do vídeo: fila → gerando → pronto | falhou | cancelado. O lote agrega: na_fila / rodando / parado / pronto /
  * falhou / cancelado. As CENAS não têm linha própria: o estado de cada uma deriva de `scenesDone` e `failScene`.
  *
- * Quem GERA de verdade é o executor (fase futura, extensão). Aqui existe só o executor SIMULADO, que avança o relógio
- * (uma cena a cada `sceneMs`) para o fluxo inteiro poder ser exercitado localmente — e é sempre rotulado como simulação.
+ * Estas regras servem aos DOIS executores:
+ *  - o SIMULADO (⚙ → Simulação local), que avança o relógio (uma cena a cada `sceneMs`) para o fluxo inteiro poder ser
+ *    exercitado sem gastar nada — sempre rotulado SIMULADO;
+ *  - o REAL (extensão do Chrome no Flow, pela ponte `window.postMessage`), que só informa o progresso de cada cena
+ *    (`real-service.ts`); o estado do vídeo continua sendo o mesmo, derivado de `scenesDone`/`failScene`.
  */
 
 export type VideoState = 'fila' | 'gerando' | 'pronto' | 'falhou' | 'cancelado';

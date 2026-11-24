@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { accountLabel } from '@/lib/bridge/accounts';
 import type { BridgeStatus, PillMode } from '@/lib/bridge/status';
 import { pillLabel } from '@/lib/bridge/status';
 import { apiGet, apiPatch, apiPost } from '@/lib/client';
+import { BASE_PATH } from '@/lib/config.shared';
 import { DEFAULT_SETTINGS, type SettingsDTO } from '@/lib/types';
 import { Modal, T } from './ui';
 
@@ -67,7 +69,7 @@ function AjudaModal({ onClose }: { onClose: () => void }) {
         <li>No <b className="text-white">Diretor</b>, arraste um viral (MP4 até 60 MB) ou troque para “A partir da sua ideia”.</li>
         <li>Ajuste as <b className="text-white">Opções do vídeo</b> (palavra, nome do lote, balão, cor) e o idioma.</li>
         <li>Escreva o pedido e aperte Enter: o Diretor mostra os passos, você confirma, e o lote aparece em <b className="text-white">Produção</b>; cada vídeo pronto entra em <b className="text-white">Vídeos</b>.</li>
-        <li>A geração real (Flow, pela extensão) é a próxima fase — por enquanto a geração é simulada localmente (⚙ → Simulação local) e nada é enviado a lugar nenhum.</li>
+        <li>Para gerar de verdade, conecte o Flow (botão “Conectar o Flow”: instale a extensão, abra o Flow na sua conta) e desligue a “Simulação local” em ⚙. Sem isso a geração é simulada localmente (selo SIMULADO) e nada é enviado a lugar nenhum.</li>
       </ol>
     </Modal>
   );
@@ -127,48 +129,84 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Painéis fixos no canto inferior direito: "Instalar extensão Zerum" e "Contas Flow · candidata". */
-export function ContasPanels({ detail, onAtualizar }: { detail: string; onAtualizar: () => Promise<void> }) {
+/**
+ * Painéis fixos no canto inferior direito: "Instalar extensão Zerum" e "Contas Flow · candidata".
+ * O primeiro entrega a extensão deste app (zip + passo a passo, sem sair do app); o segundo lista as contas REAIS do Flow
+ * que a extensão enxerga (e-mail, créditos, pausa por cota) e deixa escolher qual usar.
+ */
+export function ContasPanels({
+  status,
+  escolhida,
+  onEscolher,
+  onAtualizar,
+}: {
+  status: BridgeStatus | null;
+  escolhida: string;
+  onEscolher: (email: string) => void;
+  onAtualizar: () => Promise<void>;
+}) {
   const [settings, setSettings] = useState<SettingsDTO>(DEFAULT_SETTINGS);
-  const [status, setStatus] = useState('');
+  const [msg, setMsg] = useState('');
+  const [selecao, setSelecao] = useState(escolhida);
 
   useEffect(() => {
     apiGet<SettingsDTO>('/settings').then(setSettings).catch(() => undefined);
   }, []);
+  useEffect(() => setSelecao(escolhida), [escolhida]);
 
   const salvar = async (patch: Partial<SettingsDTO>) => {
     setSettings((s) => ({ ...s, ...patch }));
     try {
       setSettings(await apiPatch<SettingsDTO>('/settings', patch));
     } catch (e) {
-      setStatus(`⚠ ${(e as Error).message}`);
+      setMsg(`⚠ ${(e as Error).message}`);
     }
   };
 
+  const contas = status?.accounts ?? [];
+  const instalada = !!status?.checklist.extensionInstalled;
   const cx = 'rounded-lg bg-[#111] p-2 text-xs text-white shadow-lg';
   return (
     <div className="fixed bottom-3 right-3 z-[60] flex w-[min(20rem,calc(100vw-1.5rem))] flex-col items-end gap-2">
       <details className={`${cx} w-full`}>
         <summary className="cursor-pointer">Instalar extensão Zerum</summary>
         <p className="mt-2 text-zinc-300">
-          {/* Textos literais do original; sem link porque o clone ainda não tem extensão para baixar (fase futura). */}
-          <span aria-disabled="true" title="Fase futura: a extensão do clone ainda não existe" className="cursor-not-allowed text-white underline decoration-dotted">
-            Baixar extensão 0.4.17
-          </span>{' '}
+          <a href={`${BASE_PATH}/api/extension/package`} className="text-white underline">
+            Baixar extensão{status?.version ? ` ${status.version}` : ''}
+          </a>{' '}
           ·{' '}
-          <span aria-disabled="true" title="Fase futura: a extensão do clone ainda não existe" className="cursor-not-allowed text-white underline decoration-dotted">
+          <a href={`${BASE_PATH}/extensao`} className="text-white underline">
             Como instalar
-          </span>
+          </a>
         </p>
-        <p className="mt-1 text-zinc-400">A extensão do clone é a fase futura (ponte site ⇄ extensão já desenhada em lib/bridge). Nada para instalar agora.</p>
+        <p className="mt-1 text-zinc-400">
+          {instalada ? `Extensão instalada${status?.version ? ` (v${status.version})` : ''}.` : 'Extraia o ZIP, abra chrome://extensions, ligue o modo do desenvolvedor e use “Carregar sem compactação”. Depois recarregue esta página.'}
+        </p>
       </details>
       <details className={`${cx} w-full`}>
         <summary className="cursor-pointer">Contas Flow · candidata</summary>
         <div className="mt-2 space-y-2">
           <label className="block">
             Conta e projeto autorizados
-            <select disabled aria-label="Conta e projeto autorizados" className="mt-1 w-full rounded-md border border-white/15 bg-black/50 px-2 py-1">
-              <option>Nenhuma conta conectada</option>
+            <select
+              aria-label="Conta e projeto autorizados"
+              value={selecao}
+              disabled={contas.length === 0}
+              onChange={(e) => setSelecao(e.target.value)}
+              className="mt-1 w-full rounded-md border border-white/15 bg-black/50 px-2 py-1"
+            >
+              {contas.length === 0 ? (
+                <option value="">Nenhuma conta conectada</option>
+              ) : (
+                <>
+                  <option value="">Escolher sozinho (a com mais créditos)</option>
+                  {contas.map((c) => (
+                    <option key={`${c.accountId}|${c.projectId}`} value={c.email}>
+                      {accountLabel(c)}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </label>
           <label className="flex items-center gap-2">
@@ -192,18 +230,26 @@ export function ContasPanels({ detail, onAtualizar }: { detail: string; onAtuali
               className={`rounded-md px-2 py-1 ${T.botaoVidro}`}
               onClick={async () => {
                 await onAtualizar();
-                setStatus('Nenhuma conta: o executor do Flow é fase futura.');
+                setMsg('');
               }}
             >
               Atualizar contas
             </button>
-            <button type="button" disabled className={`rounded-md px-2 py-1 ${T.botaoVidro}`}>
+            <button
+              type="button"
+              disabled={contas.length === 0 || selecao === escolhida}
+              className={`rounded-md px-2 py-1 ${T.botaoVidro}`}
+              onClick={() => {
+                onEscolher(selecao);
+                setMsg(selecao ? `Usando ${selecao}.` : 'Escolha automática de conta.');
+              }}
+            >
               Usar conta selecionada
             </button>
           </div>
-          {/* O original mostra sempre a linha de status ("EXTENSAO_SEM_RESPOSTA; …"); aqui ela diz o estado real: sem extensão. */}
+          {/* A linha de status do original ("EXTENSAO_SEM_RESPOSTA; …"): aqui é sempre o estado real da ponte. */}
           <p role="status" className="min-h-4 text-zinc-400">
-            {status || detail}
+            {msg || status?.detail || ''}
           </p>
         </div>
       </details>

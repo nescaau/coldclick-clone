@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Zerum · Flow (local)",
+  "version": "0.1.0",
+  "description": "Liga o Zerum local ao Google Flow da SUA conta. Só fala com a página do Zerum no seu computador e com o flow.google.com — sem login, sem servidor, sem telemetria.",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Zerum · Flow",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "unlimitedStorage", "alarms"],
+  "host_permissions": ["https://flow.google.com/*", "https://flow-content.google/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*", "http://localhost/*"],
+      "js": ["content/site-relay-loader.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://flow.google.com/*"],
+      "js": ["content/flow-loader.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/site-relay.js", "content/flow-main.js", "content/flow-worker.js", "background/policy.js", "drivers/*.js", "lib/*.js"],
+      "matches": ["http://127.0.0.1/*", "http://localhost/*", "https://flow.google.com/*"]
+    }
+  ]
+}

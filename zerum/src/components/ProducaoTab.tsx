@@ -39,7 +39,8 @@ function VideoLinha({ v, lote, onAcao }: { v: VideoDTO; lote: BatchDTO; onAcao: 
         <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest ${v.state === 'falhou' ? 'border-red-400/60 text-red-300' : v.state === 'pronto' ? 'border-emerald-400/60 text-emerald-300' : 'border-white/20 text-zinc-300'}`}>
           {VIDEO_STATE_LABEL[v.state]}
         </span>
-        {v.state === 'pronto' && <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-black text-amber-200">SIMULADO</span>}
+        {v.state === 'pronto' && v.simulated && <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-black text-amber-200">SIMULADO</span>}
+        {v.state === 'pronto' && !v.simulated && <span className="rounded bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-black text-emerald-200">FLOW</span>}
       </div>
       {v.scenes[0] && <p className="text-xs italic text-zinc-300">“{cut(v.scenes[0].fala, 140)}”</p>}
       <div className="flex items-center gap-1" role="list" aria-label={`Cenas do vídeo ${v.idx + 1}`}>

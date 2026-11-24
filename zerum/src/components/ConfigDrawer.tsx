@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { accountLabel } from '@/lib/bridge/accounts';
+import type { BridgeStatus } from '@/lib/bridge/status';
 import { apiDelete, apiGet, apiPatch, apiPut } from '@/lib/client';
 import { MAX_QUANTITY, MAX_VIRAL_MB } from '@/lib/limits';
 import { ROLETA_TOTAL } from '@/lib/domain/plan';
@@ -24,7 +26,7 @@ const Ajuda = ({ children }: { children: React.ReactNode }) => <p className={`te
 const selectCls = `rounded-xl px-3 py-2 text-sm ${T.campo} bg-[#0e0e10]`;
 
 /** ⚙ CONFIGURAÇÃO (painel lateral). Tudo é preferência local em SQLite; sem Antigravity, sem login. */
-export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: () => void; onConectarFlow: () => void; onMudou: () => void }) {
+export function ConfigDrawer({ status, onClose, onConectarFlow, onMudou }: { status: BridgeStatus | null; onClose: () => void; onConectarFlow: () => void; onMudou: () => void }) {
   const [s, setS] = useState<SettingsDTO>(DEFAULT_SETTINGS);
   const [pronto, setPronto] = useState(false);
   const [erro, setErro] = useState('');
@@ -81,13 +83,15 @@ export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: ()
           </div>
           <div className={`space-y-2 p-3 ${T.cartaoInterno}`}>
             <div className="flex items-center gap-3">
-              <span title="não conectado">○</span>
+              <span title={status?.ready ? 'conectado' : 'não conectado'} className={status?.ready ? 'text-emerald-400' : ''}>
+                {status?.ready ? '●' : '○'}
+              </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black text-white">Conta do Flow</p>
-                <p className={`text-xs ${T.textoFraco}`}>não conectada</p>
+                <p className={`truncate text-xs ${T.textoFraco}`}>{status?.ready ? (status.accounts ?? []).filter((a) => a.online).map((a) => a.email).join(', ') || 'conectada' : 'não conectada'}</p>
               </div>
               <button type="button" onClick={onConectarFlow} className={`rounded-xl px-4 py-1.5 text-sm ${T.botaoClaro}`}>
-                Conectar
+                {status?.ready ? 'Detalhes' : 'Conectar'}
               </button>
             </div>
             <Ajuda>
@@ -138,7 +142,7 @@ export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: ()
             Simulação local da geração
           </label>
           <Ajuda>
-            Ligada: as cenas avançam pelo relógio e o vídeo “pronto” é uma cópia do viral (ou um clipe de teste) — serve para testar todo o fluxo sem gerar nada de verdade. Desligada: os lotes ficam na fila esperando o executor do Flow (fase futura).
+            Ligada: as cenas avançam pelo relógio e o vídeo “pronto” é uma cópia do viral (ou um clipe de teste, com o selo SIMULADO) — serve para testar todo o fluxo sem gerar nada de verdade. Desligada: com a extensão conectada, os lotes são gerados DE VERDADE no Flow (gasta crédito da sua conta; o vídeo pronto é o MP4 baixado de lá); sem a extensão eles ficam na fila.
           </Ajuda>
           <label className="flex items-center justify-between gap-3 text-xs text-white">
             Teste de falha: todo N-ésimo vídeo falha (0 = nunca)
@@ -313,7 +317,15 @@ export function ConfigDrawer({ onClose, onConectarFlow, onMudou }: { onClose: ()
             ROLETA · {s.roletaUsed} de {ROLETA_TOTAL} combinações usadas
           </p>
           <p className="pt-1 text-[10px] font-mono uppercase tracking-widest text-zinc-400">CRÉDITOS DO FLOW (POR CONTA)</p>
-          <p className={T.textoFraco}>Nenhuma conta do Flow conectada pela extensão.</p>
+          {(status?.accounts ?? []).length === 0 ? (
+            <p className={T.textoFraco}>Nenhuma conta do Flow conectada pela extensão.</p>
+          ) : (
+            (status?.accounts ?? []).map((a) => (
+              <p key={`${a.accountId}|${a.projectId}`} className="text-white">
+                {accountLabel(a)}
+              </p>
+            ))
+          )}
           <p className={T.textoFraco}>Estimativa de vídeos: aparece depois do 1º vídeo pronto (medida real do seu gasto).</p>
         </div>
       </section>
