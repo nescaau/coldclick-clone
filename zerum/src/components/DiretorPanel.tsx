@@ -2,9 +2,10 @@
 import { useEffect, useRef } from 'react';
 import { LANGUAGES, type LanguageId, type VideoOptions } from '@/lib/domain/video-options';
 import { MODE_LABELS, type DirectorMode } from '@/lib/domain/director';
-import type { ConversationDetail } from '@/lib/types';
+import type { ConversationDetail, ViralDTO } from '@/lib/types';
 import { Composer } from './Composer';
 import { OptionsCard } from './OptionsCard';
+import { PlanCard } from './PlanCard';
 import { ViralCard } from './ViralCard';
 import { T } from './ui';
 
@@ -18,13 +19,25 @@ interface Props {
   onArquivoViral: (f: File) => void;
   onAbrirBiblioteca: () => void;
   onTirarViral: () => void;
+  onViralMudou: (v: ViralDTO) => void;
   onEnviar: (text: string, anexos: { nome: string }[]) => Promise<boolean>;
+  onConfirmarPlano: (id: string) => void;
+  onCancelarPlano: (id: string) => void;
+  onAbrirProducao: () => void;
+  onNova: () => void;
 }
 
 const Q = ({ children }: { children: string }) => <em className="not-italic font-semibold text-zinc-100">{children}</em>;
 
-/** Texto introdutório do Diretor (literal do original). Só aparece em modo viral, antes da primeira mensagem. */
-function Intro() {
+/** Texto introdutório do Diretor (literal do original). Só aparece antes da primeira mensagem. */
+function Intro({ mode }: { mode: DirectorMode }) {
+  if (mode === 'ideia') {
+    return (
+      <p className={`text-sm leading-relaxed ${T.textoSuave}`}>
+        Não precisa de viral: descreva o vídeo que você quer e, se quiser, anexe uma imagem ou vídeo de referência no 📎. O Diretor propõe e, quando você aprovar, vira um lote.
+      </p>
+    );
+  }
   return (
     <p className={`text-sm leading-relaxed ${T.textoSuave}`}>
       O Diretor vê os seus avatares, o lote aberto e os vídeos prontos, e faz por você:{' '}
@@ -38,7 +51,7 @@ function Intro() {
   );
 }
 
-/** Aba DIRETOR: modos, viral, opções do vídeo, conversa, idioma e pedido. */
+/** Aba DIRETOR: modos, viral, opções do vídeo, conversa (com planos), idioma e pedido. */
 export function DiretorPanel(p: Props) {
   const { conv } = p;
   const fimRef = useRef<HTMLDivElement>(null);
@@ -66,7 +79,12 @@ export function DiretorPanel(p: Props) {
       </div>
 
       <div className={`space-y-4 p-5 ${T.cartao}`}>
-        <h2 className={`text-xl ${T.titulo}`}>DIRETOR</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className={`text-xl ${T.titulo}`}>DIRETOR</h2>
+          <button type="button" disabled={p.ocupado} onClick={p.onNova} className={`rounded-full px-3 py-1 text-xs ${T.botaoSecundario}`}>
+            nova conversa
+          </button>
+        </div>
 
         {conv.mode === 'viral' && (
           <ViralCard
@@ -77,12 +95,13 @@ export function DiretorPanel(p: Props) {
             onArquivo={p.onArquivoViral}
             onAbrirBiblioteca={p.onAbrirBiblioteca}
             onTirar={p.onTirarViral}
+            onViralMudou={p.onViralMudou}
           />
         )}
 
         <OptionsCard key={conv.id} options={conv.options} desabilitado={p.ocupado} onChange={p.onOpcoes} />
 
-        {conv.messages.length === 0 && conv.mode === 'viral' && <Intro />}
+        {conv.messages.length === 0 && <Intro mode={conv.mode} />}
 
         {conv.messages.length > 0 && (
           <ol aria-label="Conversa com o Diretor" className="space-y-3">
@@ -92,6 +111,7 @@ export function DiretorPanel(p: Props) {
                   {m.role !== 'aluna' && <span className={`mb-1 block ${T.rotulo}`}>{m.role === 'diretor' ? 'Diretor' : 'Sistema'}</span>}
                   <p className="whitespace-pre-wrap">{m.text}</p>
                   {m.attachments.length > 0 && <p className="mt-1 text-xs text-zinc-400">📎 {m.attachments.map((a) => a.nome).join(', ')}</p>}
+                  {m.plan && <PlanCard plan={m.plan} ocupado={p.ocupado || p.enviandoPedido} onConfirmar={p.onConfirmarPlano} onCancelar={p.onCancelarPlano} onAbrirProducao={p.onAbrirProducao} />}
                 </div>
               </li>
             ))}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMPOSER_PLACEHOLDER, composerPlaceholder, conversationTitle, formatHour, parseQuantity, planRequest } from './director';
+import { COMPOSER_PLACEHOLDER, composerPlaceholder, conversationTitle, formatHour, parseQuantity } from './director';
 
 describe('parseQuantity', () => {
   it.each([
@@ -56,19 +56,6 @@ describe('composerPlaceholder', () => {
     expect(composerPlaceholder('viral', true)).toBe('O que você quer fazer com esse viral?');
     expect(composerPlaceholder('viral', false)).toBe(COMPOSER_PLACEHOLDER.semViral);
     expect(COMPOSER_PLACEHOLDER.semViral).toBe('Conte a sua ideia ou arraste o viral acima. Pode anexar imagem/vídeo de referência no 📎 (Enter envia)');
-  });
-});
-
-describe('planRequest', () => {
-  it('vazio não vira lote', () => {
-    expect(planRequest({ mode: 'ideia', hasViral: false, text: '  ' })).toEqual({ ok: false, reason: 'vazio' });
-  });
-  it('modo viral exige viral', () => {
-    expect(planRequest({ mode: 'viral', hasViral: false, text: 'faz 2' })).toEqual({ ok: false, reason: 'sem-viral' });
-  });
-  it('modo ideia dispensa viral; quantidade padrão 1', () => {
-    expect(planRequest({ mode: 'ideia', hasViral: false, text: 'uma enfermeira' })).toEqual({ ok: true, quantity: 1 });
-    expect(planRequest({ mode: 'viral', hasViral: true, text: 'faz 20' })).toEqual({ ok: true, quantity: 20 });
   });
 });
 

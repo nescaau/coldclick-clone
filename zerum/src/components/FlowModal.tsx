@@ -25,7 +25,7 @@ export function FlowModal({ status, onRetry, onClose }: { status: BridgeStatus |
           <div className="space-y-2 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3">
             <p className="text-sm font-black text-white">O que fazer:</p>
             <ol className="list-decimal space-y-1 pl-5 text-xs text-white">
-              <li>Nada por enquanto: virais, conversas, avatares e lotes “preparando” já funcionam localmente.</li>
+              <li>Nada por enquanto: virais, conversas, avatares, planos do Diretor e lotes já funcionam localmente (com a geração simulada).</li>
               <li>A geração real (Flow, pela extensão do clone) é a próxima fase — sem login, sem assinatura e sem Antigravity.</li>
             </ol>
           </div>

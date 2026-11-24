@@ -2,8 +2,11 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { MAX_VIRAL_MB } from '@/lib/limits';
 import { apiGet } from '@/lib/client';
+import { BASE_PATH } from '@/lib/config.shared';
+import { analysisBullets, clip, fmtDuration } from '@/lib/domain/analysis';
 import type { EventDTO, ViralDTO } from '@/lib/types';
-import { fmtMb, T } from './ui';
+import { T } from './ui';
+import { ViralEditor } from './ViralEditor';
 
 interface Props {
   viral: ViralDTO | null;
@@ -14,26 +17,46 @@ interface Props {
   onArquivo: (file: File) => void;
   onAbrirBiblioteca: () => void;
   onTirar: () => void;
+  /** O viral foi corrigido / voltou à original. */
+  onViralMudou: (v: ViralDTO) => void;
 }
 
-/** Bloco "🎬 VIRAL DESTA CONVERSA": dropzone, viral anexado e "↺ Usar um viral que você já enviou". */
-export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArquivo, onAbrirBiblioteca, onTirar }: Props) {
+/** Miniatura = o primeiro quadro do próprio arquivo local (sem gerar imagem nem sair da máquina). */
+export function ViralThumb({ id, className = 'h-14 w-10' }: { id: string; className?: string }) {
+  return (
+    <video
+      src={`${BASE_PATH}/api/virals/${id}/video#t=0.1`}
+      preload="metadata"
+      muted
+      playsInline
+      tabIndex={-1}
+      aria-hidden="true"
+      className={`${className} shrink-0 rounded-lg border border-white/10 bg-white/5 object-cover`}
+    />
+  );
+}
+
+/** Bloco "🎬 VIRAL DESTA CONVERSA": dropzone, viral anexado com a análise e "↺ Usar um viral que você já enviou". */
+export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArquivo, onAbrirBiblioteca, onTirar, onViralMudou }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [arrastando, setArrastando] = useState(false);
   const [avisoTroca, setAvisoTroca] = useState(false);
-  const [verLog, setVerLog] = useState(true);
+  const [verAnalise, setVerAnalise] = useState(true);
+  const [corrigindo, setCorrigindo] = useState(false);
   const [log, setLog] = useState<EventDTO[]>([]);
 
+  const viralId = viral?.id;
+  const ver = viral?.corrected;
   useEffect(() => {
-    if (!viral) return setLog([]);
+    if (!viralId) return setLog([]);
     let vivo = true;
-    apiGet<EventDTO[]>(`/virals/${viral.id}`)
-      .then((l) => vivo && setLog(l))
+    apiGet<{ events: EventDTO[] }>(`/virals/${viralId}`)
+      .then((r) => vivo && setLog(r.events))
       .catch(() => vivo && setLog([]));
     return () => {
       vivo = false;
     };
-  }, [viral]);
+  }, [viralId, ver]);
 
   const escolher = () => inputRef.current?.click();
   const aoSoltar = (e: DragEvent) => {
@@ -42,6 +65,9 @@ export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArqui
     const f = e.dataTransfer.files?.[0];
     if (f && !desabilitado) onArquivo(f);
   };
+
+  const a = viral?.analysis ?? null;
+  const bullets = viral && a ? analysisBullets(a, viral) : [];
 
   return (
     <section aria-label="Viral desta conversa" className={`space-y-3 p-4 ${T.cartaoInterno}`}>
@@ -66,26 +92,17 @@ export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArqui
       {viral ? (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-black/30 p-3">
-            <div className="flex h-14 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-lg" aria-hidden="true">
-              🎬
-            </div>
+            <ViralThumb id={viral.id} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-black text-white" title={viral.name}>
-                {viral.name.replace(/\.mp4$/i, '')}
+                <span>{viral.name.replace(/\.mp4$/i, '')}</span>
+                <span className="font-normal text-zinc-300"> · {viral.durationS !== null ? `${fmtDuration(viral.durationS)} · ` : ''}lido ✓</span>
               </p>
-              <p className={`text-xs ${T.textoFraco}`}>
-                {fmtMb(viral.sizeBytes)} · <span className="font-mono uppercase">{viral.state}</span>
-              </p>
-              <button type="button" onClick={() => setVerLog((v) => !v)} aria-expanded={verLog} className={`text-xs ${T.link}`}>
-                {verLog ? 'esconder análise' : 'ver análise'}
+              <button type="button" onClick={() => setVerAnalise((v) => !v)} aria-expanded={verAnalise} className={`text-xs ${T.link}`}>
+                {verAnalise ? 'esconder análise' : 'ver análise'}
               </button>
             </div>
-            <button
-              type="button"
-              disabled={desabilitado || enviando}
-              onClick={() => (temMensagens ? setAvisoTroca(true) : escolher())}
-              className={`shrink-0 rounded-xl px-3 py-1.5 text-xs ${T.botaoVidro}`}
-            >
+            <button type="button" disabled={desabilitado || enviando} onClick={() => (temMensagens ? setAvisoTroca(true) : escolher())} className={`shrink-0 rounded-xl px-3 py-1.5 text-xs ${T.botaoVidro}`}>
               Trocar viral
             </button>
             <button
@@ -113,15 +130,63 @@ export function ViralCard({ viral, temMensagens, enviando, desabilitado, onArqui
             </div>
           )}
 
-          {verLog && (
-            <ul aria-label="Log local do viral" className="space-y-1 rounded-xl bg-black/30 p-3 font-mono text-[11px] leading-snug text-zinc-400">
-              {log.length === 0 && <li>Sem registros.</li>}
-              {log.map((l) => (
-                <li key={l.id} className={l.level === 'aviso' ? 'text-amber-300' : l.level === 'erro' ? 'text-red-300' : ''}>
-                  · {l.message}
-                </li>
-              ))}
-            </ul>
+          {verAnalise && a && (
+            <div className="space-y-2 text-xs leading-snug text-zinc-200">
+              {bullets.length > 0 && (
+                <ul className="list-disc space-y-0.5 pl-5 text-zinc-300">
+                  {bullets.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              )}
+              {viral.gancho && (
+                <p>
+                  <b className="text-white">Gancho:</b> “{clip(viral.gancho, 200)}”
+                </p>
+              )}
+              {a.estrutura && (
+                <p>
+                  <b className="text-white">Estrutura:</b> {clip(a.estrutura, 200)}
+                </p>
+              )}
+              {a.transcricao && (
+                <p>
+                  <b className="text-white">O que é falado:</b> <span>“{clip(a.transcricao, 200)}”</span>
+                </p>
+              )}
+              {a.origem === 'local' && (
+                <p className="rounded-lg border border-amber-400/30 bg-amber-500/5 px-2 py-1.5 text-amber-100">
+                  Leitura local: só os dados do arquivo. Gancho, estrutura e falas ficam vazios até você preencher — a IA que assiste o vídeo é a fase futura.
+                </p>
+              )}
+              {corrigindo ? (
+                <ViralEditor
+                  viral={viral}
+                  onClose={() => setCorrigindo(false)}
+                  onSalvo={(v) => {
+                    setCorrigindo(false);
+                    onViralMudou(v);
+                  }}
+                />
+              ) : (
+                <p>
+                  <button type="button" disabled={desabilitado} onClick={() => setCorrigindo(true)} className={`rounded-full px-3 py-1 text-xs ${T.botaoVidro}`}>
+                    <span aria-hidden="true">✎</span> A leitura errou? Corrigir
+                  </button>
+                </p>
+              )}
+              <details className="text-[11px] text-zinc-400">
+                <summary className="cursor-pointer">log do viral</summary>
+                <ul aria-label="Log local do viral" className="mt-1 space-y-1 rounded-xl bg-black/30 p-3 font-mono leading-snug">
+                  {log.length === 0 && <li>Sem registros.</li>}
+                  {log.map((l) => (
+                    <li key={l.id} className={l.level === 'aviso' ? 'text-amber-300' : l.level === 'erro' ? 'text-red-300' : ''}>
+                      · {l.message}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
           )}
         </div>
       ) : (

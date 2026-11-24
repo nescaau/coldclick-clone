@@ -10,6 +10,10 @@ export function getSetting<T>(key: string, fallback: T): T {
   }
 }
 
+export function deleteSetting(key: string): void {
+  getDb().prepare('DELETE FROM settings WHERE key = ?').run(key);
+}
+
 export function setSetting(key: string, value: unknown): void {
   getDb()
     .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')

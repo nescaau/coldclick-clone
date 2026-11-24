@@ -2,7 +2,8 @@
 import { T } from './ui';
 
 export type Aba = 'diretor' | 'manual' | 'producao' | 'analisados' | 'videos';
-export type Visao = 'estudio' | 'avatares' | 'config';
+/** Avatares e ⚙ abrem como painel lateral por cima do estúdio (como no original). */
+export type Gaveta = 'avatares' | 'config' | null;
 
 export const ABAS: { id: Aba; label: string }[] = [
   { id: 'diretor', label: 'DIRETOR' },
@@ -14,12 +15,13 @@ export const ABAS: { id: Aba; label: string }[] = [
 
 interface Props {
   aba: Aba;
-  visao: Visao;
+  gaveta: Gaveta;
+  avatares: number;
   onAba: (a: Aba) => void;
-  onVisao: (v: Visao) => void;
+  onGaveta: (g: Gaveta) => void;
 }
 
-export function Header({ aba, visao, onAba, onVisao }: Props) {
+export function Header({ aba, gaveta, avatares, onAba, onGaveta }: Props) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6">
       <div className="flex items-center gap-3">
@@ -34,15 +36,12 @@ export function Header({ aba, visao, onAba, onVisao }: Props) {
 
       <nav aria-label="Abas do Zerum" className={`flex flex-wrap items-center gap-1 rounded-full p-1 ${T.barra}`}>
         {ABAS.map((a) => {
-          const ativa = visao === 'estudio' && aba === a.id;
+          const ativa = aba === a.id;
           return (
             <button
               key={a.id}
               type="button"
-              onClick={() => {
-                onVisao('estudio');
-                onAba(a.id);
-              }}
+              onClick={() => onAba(a.id)}
               aria-current={ativa ? 'page' : undefined}
               className={`rounded-full px-4 py-2 text-xs font-black tracking-wider ${ativa ? T.pillAtiva : 'text-zinc-300 hover:text-white'}`}
             >
@@ -55,16 +54,19 @@ export function Header({ aba, visao, onAba, onVisao }: Props) {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => onVisao(visao === 'avatares' ? 'estudio' : 'avatares')}
-          className={`rounded-full px-4 py-2 text-xs ${visao === 'avatares' ? T.pillAtiva : T.botaoSecundario}`}
+          onClick={() => onGaveta(gaveta === 'avatares' ? null : 'avatares')}
+          aria-expanded={gaveta === 'avatares'}
+          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs ${gaveta === 'avatares' ? T.pillAtiva : T.botaoSecundario}`}
         >
-          Avatares
+          <span>Avatares</span>
+          <span>({avatares})</span>
         </button>
         <button
           type="button"
-          onClick={() => onVisao(visao === 'config' ? 'estudio' : 'config')}
+          onClick={() => onGaveta(gaveta === 'config' ? null : 'config')}
           aria-label="Configurações"
-          className={`flex h-9 w-9 items-center justify-center rounded-full text-sm ${visao === 'config' ? T.pillAtiva : T.botaoSecundario}`}
+          aria-expanded={gaveta === 'config'}
+          className={`flex h-9 w-9 items-center justify-center rounded-full text-sm ${gaveta === 'config' ? T.pillAtiva : T.botaoSecundario}`}
         >
           ⚙
         </button>

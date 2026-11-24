@@ -6,4 +6,5 @@ export const dynamic = 'force-dynamic';
 
 export const GET = api(async () => json(listAllAvatars()));
 
+/** "Preencher à mão" / "Salvar sem foto mesmo". */
 export const POST = api(async (req) => json(createAvatar(await parseBody(req, AvatarSchema)), 201));

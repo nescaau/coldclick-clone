@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 /** Tokens visuais do tema Zerum (fundo #0a0a0b, vidro branco/5, rótulos mono maiúsculos). Classes completas p/ o Tailwind. */
 export const T = {
@@ -77,3 +77,64 @@ export const fmtDateTime = (iso: string): string => {
     return '';
   }
 };
+
+/** "09:51:51 PM" — hora do painel LOG (formato en-US de 12 h, como no original). */
+export const fmtClock = (iso: string): string => {
+  try {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+
+/** "32 s" / "1 min 05 s" não são usados: o original mostra segundos puros. */
+export const fmtSeconds = (s: number | null | undefined): string => (s === null || s === undefined ? '' : `${Math.round(s)} s`);
+
+/**
+ * Confirmação por 2º clique (padrão do original: "clique de novo", volta sozinho em 6 s).
+ * `arm(key)` arma; devolve true se `key` já estava armado (= confirmou).
+ */
+export function useTwoClick(ms = 6000): { armed: string; arm: (key: string) => boolean; reset: () => void } {
+  const [armed, setArmed] = useState('');
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(''), ms);
+    return () => clearTimeout(t);
+  }, [armed, ms]);
+  return {
+    armed,
+    arm: (key) => {
+      if (armed === key) {
+        setArmed('');
+        return true;
+      }
+      setArmed(key);
+      return false;
+    },
+    reset: () => setArmed(''),
+  };
+}
+
+/** Painel lateral direito (Avatares e ⚙ no original): cobre a lateral, Esc fecha. */
+export function Drawer({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <aside
+      role="dialog"
+      aria-label={titulo}
+      className="fixed inset-y-0 right-0 z-[75] flex w-[min(26rem,100vw)] flex-col border-l border-white/10 bg-[#0e0e10] shadow-[0_0_40px_rgba(0,0,0,.6)]"
+    >
+      <div className="flex items-center justify-between px-5 py-3">
+        <span className={T.rotulo}>{titulo}</span>
+        <button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-1 text-zinc-400 hover:bg-white/10 hover:text-white">
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-8">{children}</div>
+    </aside>
+  );
+}

@@ -4,6 +4,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '@/lib/client';
 import { MAX_VIRAL_BYTES, MAX_VIRAL_MB } from '@/lib/limits';
 import type { BridgeStatus } from '@/lib/bridge/status';
 import type {
+  AvatarDTO,
   BatchDTO,
   ConversationDetail,
   ConversationSummary,
@@ -13,14 +14,14 @@ import type {
   ViralDTO,
 } from '@/lib/types';
 import { AnalisadosTab } from './AnalisadosTab';
-import { AvataresView } from './AvataresView';
-import { ConfigView } from './ConfigView';
+import { AvataresDrawer } from './AvataresDrawer';
+import { ConfigDrawer } from './ConfigDrawer';
 import { ConversationSidebar } from './ConversationSidebar';
 import { DiretorPanel } from './DiretorPanel';
 import { FlowBanner } from './FlowBanner';
 import { FlowModal } from './FlowModal';
 import { BridgePill, ContasPanels, HelpButtons } from './FloatingDock';
-import { Header, type Aba, type Visao } from './Header';
+import { Header, type Aba, type Gaveta } from './Header';
 import { ManualTab } from './ManualTab';
 import { ProducaoTab } from './ProducaoTab';
 import { VideosTab } from './VideosTab';
@@ -46,14 +47,17 @@ const lsSet = (k: string, v: string) => {
   }
 };
 
-/** Estúdio Zerum: controlador de estado da tela única (Diretor / Manual / Produção / Analisados / Vídeos / Avatares / ⚙). */
+const loteAtivo = (l: BatchDTO) => l.state === 'rodando' || l.state === 'na_fila' || l.state === 'preparando';
+
+/** Estúdio Zerum: controlador de estado da tela única (Diretor / Manual / Produção / Analisados / Vídeos + Avatares e ⚙ em painel lateral). */
 export function ZerumApp() {
   const [aba, setAba] = useState<Aba>('diretor');
-  const [visao, setVisao] = useState<Visao>('estudio');
+  const [gaveta, setGaveta] = useState<Gaveta>(null);
   const [convs, setConvs] = useState<ConversationSummary[]>([]);
   const [conv, setConv] = useState<ConversationDetail | null>(null);
-  const [virais, setVirais] = useState<ViralDTO[]>([]);
+  const [virais, setVirais] = useState<ViralDTO[] | null>(null);
   const [lotes, setLotes] = useState<BatchDTO[]>([]);
+  const [avatares, setAvatares] = useState<AvatarDTO[]>([]);
   const [ponte, setPonte] = useState<BridgeStatus | null>(null);
   const [erro, setErro] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -61,6 +65,7 @@ export function ZerumApp() {
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [flowAberto, setFlowAberto] = useState(false);
   const [bibliotecaAberta, setBibliotecaAberta] = useState(false);
+  const [tick, setTick] = useState(0);
   const bootRef = useRef(false);
 
   const refreshPonte = useCallback(async () => {
@@ -71,15 +76,29 @@ export function ZerumApp() {
     }
   }, []);
 
+  const refreshLotes = useCallback(async () => {
+    try {
+      setLotes(await apiGet<BatchDTO[]>('/batches'));
+    } catch {
+      /* a próxima leitura tenta de novo */
+    }
+  }, []);
+
+  const refreshAvatares = useCallback(async () => {
+    setAvatares(await apiGet<AvatarDTO[]>('/avatars'));
+  }, []);
+
   const refreshListas = useCallback(async () => {
-    const [c, v, l] = await Promise.all([
+    const [c, v, l, a] = await Promise.all([
       apiGet<ConversationSummary[]>('/conversations'),
       apiGet<ViralDTO[]>('/virals'),
       apiGet<BatchDTO[]>('/batches'),
+      apiGet<AvatarDTO[]>('/avatars'),
     ]);
     setConvs(c);
     setVirais(v);
     setLotes(l);
+    setAvatares(a);
     return c;
   }, []);
 
@@ -114,26 +133,36 @@ export function ZerumApp() {
     })();
   }, [abrir, refreshListas, refreshPonte]);
 
+  // Produção em tempo real: enquanto há lote ativo (ou a aba Produção está aberta) relê a cada 1,5 s.
+  const haAtivo = lotes.some(loteAtivo);
+  useEffect(() => {
+    if (!haAtivo && aba !== 'producao') return;
+    const t = setInterval(() => {
+      void refreshLotes();
+      setTick((n) => n + 1);
+    }, 1500);
+    return () => clearInterval(t);
+  }, [haAtivo, aba, refreshLotes]);
+
   const mudarAba = (a: Aba) => {
     setAba(a);
     lsSet(LS_ABA, a);
+    setGaveta(null);
+    if (a === 'producao' || a === 'videos') void refreshLotes();
   };
 
   /** Executa uma mutação mostrando erro no banner e travando os controles enquanto roda. */
-  const mutar = useCallback(
-    async (fn: () => Promise<void>) => {
-      setErro('');
-      setOcupado(true);
-      try {
-        await fn();
-      } catch (e) {
-        setErro((e as Error).message);
-      } finally {
-        setOcupado(false);
-      }
-    },
-    [],
-  );
+  const mutar = useCallback(async (fn: () => Promise<void>) => {
+    setErro('');
+    setOcupado(true);
+    try {
+      await fn();
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setOcupado(false);
+    }
+  }, []);
 
   const nova = () =>
     mutar(async () => {
@@ -211,7 +240,6 @@ export function ZerumApp() {
       lsSet(LS_CONV, d.id);
       setBibliotecaAberta(false);
       mudarAba('diretor');
-      setVisao('estudio');
       await refreshListas();
     });
 
@@ -232,35 +260,32 @@ export function ZerumApp() {
     }
   };
 
-  const tabsFora = (
-    <>
-      {aba === 'manual' && (
-        <ManualTab
-          virais={virais}
-          opcoes={conv?.options ?? null}
-          onCriado={() => {
-            void refreshListas();
-            mudarAba('producao');
-          }}
-        />
-      )}
-      {aba === 'producao' && <ProducaoTab lotes={lotes} onMudou={() => void refreshListas()} />}
-      {aba === 'analisados' && (
-        <AnalisadosTab
-          virais={virais}
-          onMudou={() => void refreshListas()}
-          onUsar={(v) => {
-            void usarViral(v);
-          }}
-        />
-      )}
-      {aba === 'videos' && <VideosTab />}
-    </>
-  );
+  const confirmarPlano = (id: string) =>
+    mutar(async () => {
+      const r = await apiPost<{ conversation: ConversationDetail; batch: BatchDTO }>(`/plans/${id}/confirm`);
+      setConv(r.conversation);
+      await refreshListas();
+    });
+
+  const cancelarPlano = (id: string) =>
+    mutar(async () => {
+      const r = await apiPost<{ conversation: ConversationDetail }>(`/plans/${id}/cancel`);
+      setConv(r.conversation);
+      await refreshListas();
+    });
+
+  const viralMudou = (v: ViralDTO) => {
+    void (async () => {
+      setVirais((l) => (l ?? []).map((x) => (x.id === v.id ? v : x)));
+      if (conv) await abrir(conv.id);
+    })();
+  };
+
+  const emAndamento = ocupado || enviandoPedido || enviandoViral;
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] pb-28 text-white">
-      <Header aba={aba} visao={visao} onAba={mudarAba} onVisao={setVisao} />
+      <Header aba={aba} gaveta={gaveta} avatares={avatares.length} onAba={mudarAba} onGaveta={setGaveta} />
 
       <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-4 sm:px-6">
         <FlowBanner onOpen={() => setFlowAberto(true)} />
@@ -274,48 +299,83 @@ export function ZerumApp() {
           </div>
         )}
 
-        {visao === 'avatares' && <AvataresView />}
-        {visao === 'config' && <ConfigView ponte={ponte} />}
-        {visao === 'estudio' &&
-          (aba === 'diretor' ? (
-            <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-5">
-              <ConversationSidebar
-                itens={convs}
-                atual={conv?.id ?? ''}
-                ocupado={ocupado || enviandoPedido || enviandoViral}
-                onAbrir={(id) => void mutar(() => abrir(id))}
+        {aba === 'diretor' && (
+          <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-5">
+            <ConversationSidebar
+              itens={convs}
+              atual={conv?.id ?? ''}
+              ocupado={emAndamento}
+              onAbrir={(id) => void mutar(() => abrir(id))}
+              onNova={() => void nova()}
+              onRenomear={(id, t) => void renomear(id, t)}
+              onApagar={(id) => void apagar(id)}
+            />
+            {conv ? (
+              <DiretorPanel
+                conv={conv}
+                ocupado={emAndamento}
+                enviandoViral={enviandoViral}
+                enviandoPedido={enviandoPedido}
+                onModo={(m) => void setModo(m)}
+                onOpcoes={(p) => void setOpcoes(p)}
+                onArquivoViral={(f) => void enviarViral(f)}
+                onAbrirBiblioteca={() => setBibliotecaAberta(true)}
+                onTirarViral={() => void patchConv({ viralId: null })}
+                onViralMudou={viralMudou}
+                onEnviar={enviarPedido}
+                onConfirmarPlano={(id) => void confirmarPlano(id)}
+                onCancelarPlano={(id) => void cancelarPlano(id)}
+                onAbrirProducao={() => mudarAba('producao')}
                 onNova={() => void nova()}
-                onRenomear={(id, t) => void renomear(id, t)}
-                onApagar={(id) => void apagar(id)}
               />
-              {conv ? (
-                <DiretorPanel
-                  conv={conv}
-                  ocupado={ocupado || enviandoPedido || enviandoViral}
-                  enviandoViral={enviandoViral}
-                  enviandoPedido={enviandoPedido}
-                  onModo={(m) => void setModo(m)}
-                  onOpcoes={(p) => void setOpcoes(p)}
-                  onArquivoViral={(f) => void enviarViral(f)}
-                  onAbrirBiblioteca={() => setBibliotecaAberta(true)}
-                  onTirarViral={() => void patchConv({ viralId: null })}
-                  onEnviar={enviarPedido}
-                />
-              ) : (
-                <p className={`p-6 text-sm ${T.textoFraco}`}>Carregando…</p>
-              )}
-            </div>
-          ) : (
-            tabsFora
-          ))}
+            ) : (
+              <p className={`p-6 text-sm ${T.textoFraco}`}>Carregando…</p>
+            )}
+          </div>
+        )}
+        {aba !== 'diretor' && (
+          <div>
+            <button type="button" onClick={() => mudarAba('diretor')} className={`rounded-full px-4 py-2 text-xs ${T.botaoSecundario}`}>
+              🎬 Diretor
+            </button>
+          </div>
+        )}
+        {aba === 'manual' && (
+          <ManualTab
+            virais={virais ?? []}
+            avatares={avatares}
+            opcoes={conv?.options ?? null}
+            onViralEnviado={() => void refreshListas()}
+            onAbrirConfig={() => setGaveta('config')}
+            onCriado={() => {
+              void refreshListas();
+              mudarAba('producao');
+            }}
+          />
+        )}
+        {aba === 'producao' && <ProducaoTab lotes={lotes} onMudou={() => void refreshListas()} onAbrirVideos={() => mudarAba('videos')} />}
+        {aba === 'analisados' && <AnalisadosTab virais={virais} onAtualizar={() => void refreshListas()} onUsar={(v) => void usarViral(v)} />}
+        {aba === 'videos' && <VideosTab tick={tick} />}
       </main>
 
       <HelpButtons />
       <BridgePill status={ponte} onClick={() => setFlowAberto(true)} />
       <ContasPanels onAtualizar={refreshPonte} />
 
+      {gaveta === 'avatares' && <AvataresDrawer avatares={avatares} onMudou={refreshAvatares} onClose={() => setGaveta(null)} />}
+      {gaveta === 'config' && (
+        <ConfigDrawer
+          onClose={() => setGaveta(null)}
+          onMudou={() => void refreshLotes()}
+          onConectarFlow={() => {
+            setGaveta(null);
+            setFlowAberto(true);
+          }}
+        />
+      )}
       {flowAberto && <FlowModal status={ponte} onRetry={refreshPonte} onClose={() => setFlowAberto(false)} />}
-      {bibliotecaAberta && <ViralPicker virais={virais} atualId={conv?.viral?.id ?? null} onUsar={(v) => void usarViral(v)} onClose={() => setBibliotecaAberta(false)} />}
+      {bibliotecaAberta && <ViralPicker virais={virais ?? []} atualId={conv?.viral?.id ?? null} onUsar={(v) => void usarViral(v)} onClose={() => setBibliotecaAberta(false)} />}
     </div>
   );
 }
+

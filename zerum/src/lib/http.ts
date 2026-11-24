@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { ZodError, type ZodTypeAny, type z } from 'zod';
 import { AppError } from './errors';
 import { MAX_VIRAL_BYTES, MAX_VIRAL_MB } from './limits';
+import { MAX_PHOTO_BYTES, MAX_PHOTO_MB } from './domain/avatar';
 import { ensureBootstrapped } from './services/bootstrap';
 
 export const json = <T>(data: T, status = 200) => NextResponse.json(data, { status });
@@ -60,5 +61,23 @@ export async function readViralUpload(req: NextRequest): Promise<{ name: string;
   const file = form.get('file');
   if (!(file instanceof File)) throw new AppError(400, 'Escolha um arquivo de vídeo.');
   if (file.size > MAX_VIRAL_BYTES) throw new AppError(413, `O vídeo passa de ${MAX_VIRAL_MB} MB.`);
+  return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+}
+
+/** Lê a foto de um multipart (campo `file`). A validação de conteúdo é do avatar-service. */
+export async function readPhotoUpload(req: NextRequest): Promise<{ name: string; bytes: Uint8Array }> {
+  const type = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  if (type !== 'multipart/form-data') throw new AppError(415, 'Envie a foto como multipart/form-data');
+  const declared = Number(req.headers.get('content-length') ?? 0);
+  if (declared > MAX_PHOTO_BYTES + 1024 * 1024) throw new AppError(413, `Foto grande demais. O limite é ${MAX_PHOTO_MB} MB.`);
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    throw new AppError(400, 'Upload inválido.');
+  }
+  const file = form.get('file');
+  if (!(file instanceof File)) throw new AppError(400, 'Escolha uma foto.');
+  if (file.size > MAX_PHOTO_BYTES) throw new AppError(413, `Foto grande demais (${(file.size / 1024 / 1024).toFixed(0)} MB). O limite é ${MAX_PHOTO_MB} MB.`);
   return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
 }

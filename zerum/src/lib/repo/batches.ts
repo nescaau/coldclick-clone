@@ -1,8 +1,9 @@
 import { getDb, newId, nowIso } from '../db';
-import type { BatchDTO, BatchState } from '../types';
+import type { PathId, VariationId } from '../domain/plan';
 import type { LanguageId } from '../domain/video-options';
+import type { BatchState } from '../types';
 
-interface BatchRow {
+export interface BatchRow {
   id: string;
   conversation_id: string | null;
   viral_id: string | null;
@@ -17,41 +18,28 @@ interface BatchRow {
   language: LanguageId;
   request_text: string;
   state: BatchState;
+  path: PathId;
+  variation: VariationId;
+  avatars: string;
+  notes: string;
+  stop_requested: number;
+  archived: number;
   created_at: string;
   updated_at: string;
 }
 
 const SELECT = `SELECT b.*, v.name AS viral_name FROM batches b LEFT JOIN virals v ON v.id = b.viral_id`;
 
-const toDTO = (r: BatchRow): BatchDTO => ({
-  id: r.id,
-  conversationId: r.conversation_id,
-  viralId: r.viral_id,
-  viralName: r.viral_name,
-  source: r.source,
-  title: r.title,
-  quantity: r.quantity,
-  word: r.word,
-  batchName: r.batch_name,
-  bubbleOn: !!r.bubble_on,
-  bubbleColor: r.bubble_color,
-  language: r.language,
-  requestText: r.request_text,
-  state: r.state,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-});
+export const listBatchRows = (): BatchRow[] => getDb().prepare(`${SELECT} ORDER BY b.created_at DESC, b.rowid DESC`).all() as BatchRow[];
 
-export const listBatches = (): BatchDTO[] =>
-  (getDb().prepare(`${SELECT} ORDER BY b.created_at DESC, b.rowid DESC`).all() as BatchRow[]).map(toDTO);
+export const listBatchRowsByConversation = (conversationId: string): BatchRow[] =>
+  getDb().prepare(`${SELECT} WHERE b.conversation_id = ? ORDER BY b.created_at DESC, b.rowid DESC`).all(conversationId) as BatchRow[];
 
-export const listBatchesByConversation = (conversationId: string): BatchDTO[] =>
-  (getDb().prepare(`${SELECT} WHERE b.conversation_id = ? ORDER BY b.created_at DESC, b.rowid DESC`).all(conversationId) as BatchRow[]).map(toDTO);
+export const getBatchRow = (id: string): BatchRow | undefined => getDb().prepare(`${SELECT} WHERE b.id = ?`).get(id) as BatchRow | undefined;
 
-export const getBatch = (id: string): BatchDTO | undefined => {
-  const r = getDb().prepare(`${SELECT} WHERE b.id = ?`).get(id) as BatchRow | undefined;
-  return r ? toDTO(r) : undefined;
-};
+/** Lotes que ainda podem mudar de estado (o `tick` só olha estes). */
+export const listActiveBatchRows = (): BatchRow[] =>
+  getDb().prepare(`${SELECT} WHERE b.state IN ('preparando','na_fila','rodando') ORDER BY b.created_at ASC, b.rowid ASC`).all() as BatchRow[];
 
 export interface NewBatch {
   conversationId: string | null;
@@ -65,24 +53,34 @@ export interface NewBatch {
   bubbleColor: string;
   language: LanguageId;
   requestText: string;
+  path: PathId;
+  variation: VariationId;
+  avatars: string[];
+  notes: string;
 }
 
-export function insertBatch(b: NewBatch): BatchDTO {
+export function insertBatch(b: NewBatch): BatchRow {
   const id = newId();
   const now = nowIso();
   getDb()
     .prepare(
-      `INSERT INTO batches (id, conversation_id, viral_id, source, title, quantity, word, batch_name, bubble_on, bubble_color, language, request_text, state, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'preparando', ?, ?)`,
+      `INSERT INTO batches (id, conversation_id, viral_id, source, title, quantity, word, batch_name, bubble_on, bubble_color, language, request_text,
+                            state, path, variation, avatars, notes, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'na_fila', ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, b.conversationId, b.viralId, b.source, b.title, b.quantity, b.word, b.batchName, b.bubbleOn ? 1 : 0, b.bubbleColor, b.language, b.requestText, now, now);
-  return getBatch(id)!;
+    .run(id, b.conversationId, b.viralId, b.source, b.title, b.quantity, b.word, b.batchName, b.bubbleOn ? 1 : 0, b.bubbleColor, b.language, b.requestText, b.path, b.variation, JSON.stringify(b.avatars), b.notes, now, now);
+  return getBatchRow(id)!;
 }
 
 export const setBatchState = (id: string, state: BatchState): void => {
   getDb().prepare('UPDATE batches SET state = ?, updated_at = ? WHERE id = ?').run(state, nowIso(), id);
 };
-
+export const setStopRequested = (id: string, v: boolean): void => {
+  getDb().prepare('UPDATE batches SET stop_requested = ?, updated_at = ? WHERE id = ?').run(v ? 1 : 0, nowIso(), id);
+};
+export const setArchived = (id: string, v: boolean): void => {
+  getDb().prepare('UPDATE batches SET archived = ?, updated_at = ? WHERE id = ?').run(v ? 1 : 0, nowIso(), id);
+};
 export const deleteBatch = (id: string): void => {
   getDb().prepare('DELETE FROM batches WHERE id = ?').run(id);
 };

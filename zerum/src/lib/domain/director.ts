@@ -73,17 +73,6 @@ export function composerPlaceholder(mode: DirectorMode, hasViral: boolean): stri
   return hasViral ? COMPOSER_PLACEHOLDER.comViral : COMPOSER_PLACEHOLDER.semViral;
 }
 
-export type RequestPlan =
-  | { ok: true; quantity: number }
-  | { ok: false; reason: 'vazio' | 'sem-viral' };
-
-/** Decide se um pedido ao Diretor já dá para virar lote (viral → precisa de viral; ideia → só texto). */
-export function planRequest(input: { mode: DirectorMode; hasViral: boolean; text: string }): RequestPlan {
-  if (!input.text.trim()) return { ok: false, reason: 'vazio' };
-  if (input.mode === 'viral' && !input.hasViral) return { ok: false, reason: 'sem-viral' };
-  return { ok: true, quantity: parseQuantity(input.text) ?? 1 };
-}
-
 /** "11:31" — hora local pt-BR na lista de conversas. */
 export function formatHour(iso: string): string {
   try {

@@ -66,8 +66,8 @@ function AjudaModal({ onClose }: { onClose: () => void }) {
       <ol className={`list-decimal space-y-2 pl-5 text-sm ${T.textoSuave}`}>
         <li>No <b className="text-white">Diretor</b>, arraste um viral (MP4 até 60 MB) ou troque para “A partir da sua ideia”.</li>
         <li>Ajuste as <b className="text-white">Opções do vídeo</b> (palavra, nome do lote, balão, cor) e o idioma.</li>
-        <li>Escreva o pedido e aperte Enter: o lote aparece em <b className="text-white">Produção</b> como “preparando”.</li>
-        <li>A geração real (Flow, pela extensão) é a próxima fase — por enquanto nada é gerado nem enviado a lugar nenhum.</li>
+        <li>Escreva o pedido e aperte Enter: o Diretor mostra os passos, você confirma, e o lote aparece em <b className="text-white">Produção</b>; cada vídeo pronto entra em <b className="text-white">Vídeos</b>.</li>
+        <li>A geração real (Flow, pela extensão) é a próxima fase — por enquanto a geração é simulada localmente (⚙ → Simulação local) e nada é enviado a lugar nenhum.</li>
       </ol>
     </Modal>
   );

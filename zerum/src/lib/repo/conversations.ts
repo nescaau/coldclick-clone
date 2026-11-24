@@ -63,7 +63,7 @@ const toMessage = (r: MessageRow): MessageDTO => {
   } catch {
     /* anexos corrompidos viram lista vazia */
   }
-  return { id: r.id, role: r.role, text: r.text, attachments, createdAt: r.created_at };
+  return { id: r.id, role: r.role, text: r.text, attachments, plan: null, createdAt: r.created_at };
 };
 
 export const listMessages = (conversationId: string): MessageDTO[] =>
@@ -82,5 +82,5 @@ export function insertMessage(conversationId: string, role: MessageRole, text: s
   getDb()
     .prepare('INSERT INTO messages (id, conversation_id, role, text, attachments, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(id, conversationId, role, text, JSON.stringify(attachments), now);
-  return { id, role, text, attachments, createdAt: now };
+  return { id, role, text, attachments, plan: null, createdAt: now };
 }
