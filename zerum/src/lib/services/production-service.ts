@@ -189,7 +189,13 @@ export function openBatch(input: OpenBatchInput): BatchDTO {
   });
 }
 
-/** Lotes antigos (v1) ficaram sem vídeos: cria-os uma vez, no bootstrap. */
+/**
+ * Lotes antigos (v1) ficaram sem vídeos: cria-os uma vez, no bootstrap.
+ *
+ * DECISÃO: entram PARADOS (state `parado` + stop_requested=1), nunca em `na_fila`. Um lote v1 foi guardado numa época
+ * em que nada executava; se entrasse em `na_fila`, a simulação o rodaria sozinha no primeiro GET depois da migração,
+ * sem o dono ter pedido. O dono decide em "Continuar de onde parou" (ou cancela/descarta).
+ */
 export function materializeLegacyBatches(): number {
   let n = 0;
   for (const b of listBatchRows()) {
@@ -200,8 +206,9 @@ export function materializeLegacyBatches(): number {
       for (let i = 0; i < b.quantity; i++) {
         insertVideo({ batchId: b.id, idx: i, title: `${b.title} · vídeo ${i + 1}`, scenes: Array.from({ length: nScenes }, (_, k) => ({ fala: `Cena ${k + 1}` })), avatarName: '' });
       }
-      setBatchState(b.id, 'na_fila');
-      logEvent('batch', b.id, 'Lote de versão anterior atualizado: vídeos e cenas criados (na fila).');
+      setStopRequested(b.id, true);
+      setBatchState(b.id, 'parado');
+      logEvent('batch', b.id, 'Lote de versão anterior atualizado: vídeos e cenas criados. Ele fica PARADO — nada é gerado sem você pedir; clique em Continuar de onde parou para iniciar (ou cancele/descarte).', 'aviso');
     });
     n++;
   }

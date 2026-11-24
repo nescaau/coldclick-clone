@@ -430,6 +430,65 @@ describe('Produção: lote → vídeos → cenas (simulação local com relógio
     expect(m.prod.getBatchDTO(legacy.id).videos).toHaveLength(2);
     expect(m.prod.materializeLegacyBatches()).toBe(0); // idempotente
   });
+
+  it('lote v1 "preparando" entra PARADO e nenhum tick o executa sem ação do usuário', () => {
+    const db = globalThis.__zerumDb as import("better-sqlite3").Database;
+    db.prepare("INSERT INTO batches (id, source, title, quantity, state) VALUES ('legacy-v1','manual','v1 preparando',3,'preparando')").run();
+    expect(m.prod.materializeLegacyBatches()).toBeGreaterThanOrEqual(1);
+    const row = m.batchRepo.getBatchRow('legacy-v1')!;
+    expect(row).toMatchObject({ state: 'parado', stop_requested: 1 });
+    // O primeiro GET (e todos os ticks seguintes, mesmo muito tempo depois) não podem iniciar nada.
+    advance(0);
+    advance(10 * 60_000);
+    const dto = m.prod.getBatchDTO('legacy-v1');
+    expect(dto.state).toBe('parado');
+    expect(dto.videos).toHaveLength(3);
+    expect(dto.videos.every((v) => v.state === 'fila' && v.scenesDone === 0)).toBe(true);
+    expect(m.prod.batchEvents('legacy-v1').some((e) => /PARADO/.test(e.message))).toBe(true);
+    // Só a ação do usuário ("Continuar de onde parou") põe o lote para rodar.
+    m.prod.resumeBatch('legacy-v1');
+    advance(0);
+    expect(m.prod.getBatchDTO('legacy-v1').state).toBe('rodando');
+  });
+
+  it('palavra do comentário ACENTUADA no pedido chega ao lote (regressão: capturava "do")', () => {
+    const c = m.conv.createConversation({ mode: 'ideia' });
+    const r = say(c.id, 'quero 2 vídeos, palavra do comentário LINK');
+    expect(r.plan!.params.word).toBe('LINK');
+    const b = m.director.confirmPlan(r.plan!.id).batch;
+    expect(b.word).toBe('LINK');
+    expect(b.bubbleOn).toBe(true);
+  });
+
+  it('log de lote grande: a janela é das ÚLTIMAS linhas (a mais nova aparece), em ordem ascendente', () => {
+    m.settings.patchSettings({ parallel: 4 });
+    const b = newBatch(50, { viral: true });
+    advance(0);
+    for (let i = 0; i < 400; i++) advance(1000);
+    expect(m.prod.getBatchDTO(b.id).state).toBe('pronto');
+    // Garante >400 linhas mesmo que a simulação logue menos: enche o meio do log e fecha de novo.
+    for (let i = 0; i < 455; i++) m.events.logEvent('batch', b.id, `linha de enchimento ${i}`);
+    m.events.logEvent('batch', b.id, 'Lote: produção encerrada — 50/50 prontos.');
+    const log = m.prod.batchEvents(b.id);
+    expect(log).toHaveLength(400);
+    expect(log[log.length - 1].message).toBe('Lote: produção encerrada — 50/50 prontos.');
+    expect(log.map((e) => e.id)).toEqual([...log.map((e) => e.id)].sort((x, y) => x - y)); // ascendente
+    expect(log.some((e) => /Lote criado/.test(e.message))).toBe(false); // a janela descartou o começo, não o fim
+  });
+
+  it('log de lote grande COM a simulação real: as últimas linhas são do fim da produção (vídeos finais + encerramento)', () => {
+    m.settings.patchSettings({ parallel: 4 });
+    const b = newBatch(50, { viral: true });
+    advance(0);
+    for (let i = 0; i < 400; i++) advance(1000);
+    const all = (globalThis.__zerumDb as import('better-sqlite3').Database)
+      .prepare("SELECT COUNT(*) AS n FROM events WHERE scope='batch' AND ref_id = ?")
+      .get(b.id) as { n: number };
+    const log = m.prod.batchEvents(b.id);
+    expect(log.length).toBe(Math.min(400, all.n));
+    expect(log[log.length - 1].message).toMatch(/produção encerrada — 50\/50/);
+    expect(log.some((e) => /vídeo 50\b/i.test(e.message))).toBe(true);
+  });
 });
 
 describe('virais (upload local real + leitura honesta)', () => {

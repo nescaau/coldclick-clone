@@ -12,9 +12,14 @@ export function logEvent(scope: EventScope, refId: string, message: string, leve
   if (process.env.NODE_ENV !== 'test') console.log(`[zerum:${scope}] ${refId.slice(0, 8)} ${level}: ${message}`);
 }
 
+/** A JANELA das últimas `limit` linhas, em ordem de exibição ascendente (a mais antiga da janela primeiro). */
 export function listEvents(scope: EventScope, refId: string, limit = 200): EventDTO[] {
   const rows = getDb()
-    .prepare('SELECT id, level, message, created_at FROM events WHERE scope = ? AND ref_id = ? ORDER BY id ASC LIMIT ?')
+    .prepare(
+      `SELECT id, level, message, created_at FROM (
+         SELECT id, level, message, created_at FROM events WHERE scope = ? AND ref_id = ? ORDER BY id DESC LIMIT ?
+       ) ORDER BY id ASC`,
+    )
     .all(scope, refId, limit) as { id: number; level: EventDTO['level']; message: string; created_at: string }[];
   return rows.map((r) => ({ id: r.id, level: r.level, message: r.message, createdAt: r.created_at }));
 }

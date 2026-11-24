@@ -21,6 +21,25 @@ describe('interpretRequest (Diretor local, sem IA)', () => {
     expect(interpretRequest('a palavra é muito boa', base).params.word).toBe('');
   });
 
+  it('palavra do comentário tolera acento (regressão: capturava "do")', () => {
+    for (const pedido of [
+      'palavra do comentário LINK',
+      'Palavra do Comentário: LINK',
+      'palavra do comentario LINK',
+      'palavra do comentário "LINK"',
+      'palavra do comentário “LINK”',
+      'PALAVRA DO COMENTÁRIO LINK',
+      'palavra-chave LINK',
+      'palavra no balão LINK',
+      'palavra do balão: LINK',
+      'palavra do comentário LINK', // "á" decomposto (NFD)
+    ]) {
+      const r = interpretRequest(`quero 3 vídeos, ${pedido}`, base);
+      expect(r.params.word, pedido).toBe('LINK');
+      expect(r.entendi, pedido).toContain('palavra LINK');
+    }
+  });
+
   it('refinar: parte dos parâmetros atuais e acumula as observações ("lei pros roteiros")', () => {
     const a = interpretRequest('quero igual, 3 vídeos', base);
     const b = interpretRequest('troca a abertura', a.params);

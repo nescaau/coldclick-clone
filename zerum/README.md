@@ -142,7 +142,7 @@ e o clone precisa **dizer a verdade** sobre o que é local:
   um plano mais novo". (Literais do original: "Plano", "(você confirma; o que gasta crédito está marcado):", "Executar",
   "Executar N passos", "Fechado. Confira o plano aqui embaixo e clique em … — ou diga o que quer mudar.", "Executando o que
   você confirmou, na ordem…", "Feito: … Acompanhe no painel Produção; cada vídeo pronto entra em Vídeos.")
-- **Produção**: selo **SIMULADO**; faixa de cenas; barra de progresso; "ver log / esconder log"; "✕ Descartar vídeo"; "terminou
+- **Produção**: selo **SIMULADO**; faixa de cenas; barra de progresso; "ver log / esconder log"; "terminou
   com falha"; todas as linhas de log do lote; os textos-padrão das cenas ("Cena k: fala nova sobre o mesmo assunto (o roteiro é
   escrito pela IA do Diretor — fase futura).", "Cena k: mesma fala do viral (a transcrição está vazia…)"); mensagem de falha real
   (arquivo do viral sumiu). (Literais do original: "Parar depois dos atuais", "Parando após os atuais…", "✕ Cancelar agora" /
@@ -160,8 +160,34 @@ e o clone precisa **dizer a verdade** sobre o que é local:
   antigo… Aqui ela só fica guardada neste computador — não é testada nem enviada"); "Padrão salvo: …". (Título "Diretor (modo
   antigo, chave própria)", "Apagar chave" e "Chave apagada." são literais do `zerum-app.js`.)
 - **Vídeos / Analisados**: selo SIMULADO; "Leitura local: só os dados do arquivo (corrija no Diretor para preencher)."
+- **Mensagens de erro da API** (rotas `/zerum/api/*`; o original responde pelo servidor da 001, então não há fonte): "Esse plano
+  já foi executado." / "Esse plano não está mais valendo — use o mais recente."; "Só dá para parar um lote em andamento.";
+  "Espere o lote terminar (ou cancele) antes de aprovar."; "Cancele o lote antes de descartar um vídeo em andamento.";
+  "Esse lote já terminou: não há nada para cancelar."; "Esse lote não está parado."; "Nenhum vídeo com falha para refazer.".
+- **Linhas de log da conversa** (Diretor): "Conversa criada."; "Plano montado (N passos) — aguardando confirmação."; "Plano
+  confirmado e executado." / "Plano executado automaticamente (Aprovar tudo ligado no ⚙)."
+- **Log geral do app**: "Memória local recuperada: N avatar(es), M vídeo(s) pronto(s) (neste computador)." — **reescrita** da
+  linha do original "Memória de 23/11… recuperada" (a data e o texto dela não são reproduzidos; o clone diz o que de fato foi lido
+  do SQLite local).
+- **Avatares (avisos)**: "Foto guardada neste computador. Abra o lápis para dar nome, escolher mulher ou homem e descrever."
+  e "Avatar criado sem foto: o rosto gerado pelo Flow é f…" (explica que o rosto gerado é fase futura).
+- **Analisados / Produção (rótulos)**: "ver análise" / "esconder análise"; "Escolher outro viral"; "gerando · cena N/M";
+  bullets de análise "com áudio" / "sem faixa de áudio" (vêm dos metadados reais do MP4, não de IA).
+- **"✕ Descartar vídeo"** (Produção): **função inexistente no original** — lá o cartão de vídeo tem **"Editar vídeo"** e
+  **"Algo deu errado?"**. O clone não implementa nenhum dos dois (o editor é fase futura) e mantém um descarte próprio, com
+  2º clique, só para tirar da Produção um vídeo que já terminou/foi cancelado.
+- **Lote v1 migrado entra PARADO**: texto do log "Lote de versão anterior atualizado: … Ele fica PARADO — nada é gerado sem você
+  pedir…" (ver "Migração de lotes da v1").
 - **Casca**: texto do painel "Precisando de ajuda?", do diálogo "CONECTAR O FLOW" (passo-a-passo trocado por "fase futura") e
   dos painéis "Contas Flow"/"Instalar extensão" (os títulos são literais; a frase de status é reescrita).
+
+### Migração de lotes da v1 (decisão registrada)
+
+Lotes da versão 1 (estado `preparando`, ou `na_fila` sem vídeos) são **materializados uma única vez no bootstrap** — os
+vídeos e cenas são criados — e entram **PARADOS** (`state = parado` e `stop_requested = 1`), **nunca** em `na_fila`. Motivo: a
+simulação avança por leitura (`tickBatches`) e rodaria um lote `na_fila` sozinha no primeiro `GET` depois da migração, sem o dono
+ter pedido nada. Só **"Continuar de onde parou"** (ou cancelar/descartar) mexe nele. Coberto por teste
+(`services.test.ts`: lote v1 `preparando` fica `parado` após vários ticks e só roda depois do `resumeBatch`).
 
 ### Divergências que NÃO consegui verificar (preciso de captura na referência)
 
@@ -172,8 +198,11 @@ e o clone precisa **dizer a verdade** sobre o que é local:
 4. **Lápis e lixeira do avatar** (formulário e confirmação de apagar), **"Mesma pessoa, outro visual" / "Pessoa nova parecida"**,
    **"Selecionar vários"** em uso, e a **grade** (o original mostra ~4 cartões estreitos por linha; o clone usa 2).
 5. **Aba VÍDEOS com vídeos** (cartões, versões "v2", botão **Editar**) — o **editor "Editar" não foi implementado**.
-6. **⚙**: opções reais dos selects "Vídeos simultâneos" (assumi 1–4) e "Imagem" (3 modelos vindos do app.js), valor padrão de
-   "altura da legenda", e a aparência de "Ajustes avançados" aberto.
+6. **⚙**: valor padrão de "altura da legenda" e a aparência de "Ajustes avançados" aberto. (Os selects estão **confirmados no
+   `zerum-app.js`**: "Vídeos simultâneos" = `[1,2,3,4]`; "Imagem" = `🍌 Nano Banana Pro` (rótulo "Nano Banana Pro (melhor
+   rosto)"), `🍌 Nano Banana 2` e `🍌 Nano Banana 2 Lite` (rótulo "🍌 Nano Banana 2 Lite (rápido)"). **Divergência conhecida do
+   clone:** `IMAGE_MODEL_OPTIONS` ainda guarda o terceiro modelo como `Nano Banana Lite` (sem o "2" e sem "(rápido)"); alinhar
+   exige migrar o valor já salvo em `settings` — fica para a próxima rodada.)
 7. **Manual**: seletor de cor do balão (não aparece no snap), o que "trocar modelo → clique aqui" realmente abre, e a regra exata
    de "Falta:" (no snap só aparece a palavra, mesmo sem viral/avatar).
 8. **Posição/papel do botão "🎬 Diretor"** nas abas fora do Diretor (aparece no snap, sem captura visual).
@@ -183,7 +212,7 @@ e o clone precisa **dizer a verdade** sobre o que é local:
 
 ## Testes
 
-`npm test` (vitest, **162 testes**, 14 arquivos): regras puras (opções, Diretor, plano, produção com relógio injetado, análise,
+`npm test` (vitest, **167 testes**, 14 arquivos): regras puras (opções, Diretor, plano, produção com relógio injetado, análise,
 MP4 incl. metadados, zip com CRC, avatar/⚙, Range/Content-Disposition), protocolo/broker/pílula, **migrações** (inclui v1→v2 com
 dados) e **serviços sobre SQLite real** (conversas, plano→lote, cenas/cancelar/parar/regerar/falha, vídeos/download/zip, virais,
 avatares, ⚙). `no-network.test.ts` varre `src/**` e `next.config.ts` com o parser do TypeScript e falha se aparecer import de

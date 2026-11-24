@@ -124,7 +124,12 @@ export function interpretRequest(text: string, base: PlanParams): { params: Plan
     entendi.push('avatares novos');
   }
 
-  const word = /\bpalavra(?: do comentario)?\s*[:=]?\s*["“]?([A-Za-z0-9]{2,24})["”]?/i.exec(text);
+  // Roda sobre o texto ORIGINAL (com acento, em NFC), então os qualificadores aceitam as duas grafias:
+  // "palavra do comentário", "palavra do comentario", "palavra-chave", "palavra no balão"…
+  const word =
+    /\bpalavra(?:[\s-]+(?:chave|(?:d[oae]s?|n[oa]s?)\s+(?:coment[aá]rios?|bal[aã]o|bal[oõ]es)))?\s*[:=]?\s*["“]?([A-Za-z0-9]{2,24})["”]?/i.exec(
+      text.normalize('NFC'),
+    );
   if (word) {
     const w = sanitizeWord(word[1]);
     if (w) {
